@@ -1,0 +1,9 @@
+{
+  "name": "NovaBook",
+  "description": "A single-page social network web app inspired by Facebook with a vibrant green and yellow theme, user profile dashboards, Reels video player, Facebook-style Live streaming, Firebase, and Google AdMob monetization units.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

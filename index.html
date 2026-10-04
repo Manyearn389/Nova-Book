@@ -1575,9 +1575,14 @@
   <div id="app-container">
     <!-- Top Header -->
     <header id="main-header">
-      <div class="brand" onclick="navigateTo('feed-view')">
-        <i class="fa-solid fa-seedling"></i>
-        <span>NovaBook</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="brand" onclick="navigateTo('feed-view')">
+          <i class="fa-solid fa-seedling"></i>
+          <span>NovaBook</span>
+        </div>
+        <button type="button" id="btn-appcheck-diag" onclick="openAppCheckDiagnosticModal()" style="background:#f0fdf4; border:1px solid #16a34a; color:#15803d; font-size:0.72rem; font-weight:800; padding:4px 9px; border-radius:99px; cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="Test Firebase App Check Status">
+          <i class="fa-solid fa-shield-halved"></i> App Check Status
+        </button>
       </div>
       <div class="header-actions" id="header-auth-actions" style="display:none;">
         <button class="btn-icon" id="header-camera-btn" onclick="openHomepageCamera()" title="Camera" style="color:var(--primary); font-size:1.05rem;">
@@ -3444,28 +3449,30 @@
       <i class="fa-solid fa-circle-check" style="color:#4ade80;"></i>
       <span id="nova-toast-text">Notification</span>
     </div>
+
+    <!-- Temporary Firebase App Check Diagnostic Modal -->
+    <div id="appcheck-diagnostic-modal" class="modal-backdrop" style="display:none; z-index:250000;" onclick="if(event.target.id==='appcheck-diagnostic-modal') closeModal('appcheck-diagnostic-modal')">
+      <div class="modal-content" style="max-width:460px; width:94%; padding:18px;">
+        <div class="modal-header" style="margin-bottom:12px;">
+          <span style="font-weight:800; font-size:1rem; display:flex; align-items:center; gap:8px; color:var(--primary);">
+            <i class="fa-solid fa-shield-halved"></i> Firebase App Check Diagnostics
+          </span>
+          <button class="btn-icon" onclick="closeModal('appcheck-diagnostic-modal')">&times;</button>
+        </div>
+        <div id="appcheck-diag-results" style="font-size:0.82rem; display:flex; flex-direction:column; gap:8px; background:var(--bg); padding:12px; border-radius:10px; border:1px solid var(--border); font-family:monospace; word-break:break-word;">
+          <div>Click "Run Diagnostic Check" below to inspect Firebase App Check.</div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button type="button" class="btn btn-primary" style="flex:1; font-weight:800;" onclick="runAppCheckDiagnostics()">
+            <i class="fa-solid fa-rotate"></i> Re-run Check
+          </button>
+          <button type="button" class="btn btn-outline" onclick="closeModal('appcheck-diagnostic-modal')">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
-    // Prevent Firebase App Check reCAPTCHA domain-mismatch errors in preview iframes from triggering fatal error overlays
-    (function() {
-      const origConsoleError = console.error.bind(console);
-      console.error = function(...args) {
-        const firstArg = args.length > 0 ? String(args[0] || '') : '';
-        if (firstArg.includes('@firebase/app-check') || firstArg.includes('appCheck/recaptcha-error')) {
-          console.warn(...args);
-          return;
-        }
-        return origConsoleError(...args);
-      };
-      window.addEventListener('unhandledrejection', function(e) {
-        const msg = e && e.reason ? String(e.reason.message || e.reason.code || e.reason) : '';
-        if (msg.includes('appCheck/recaptcha-error') || msg.includes('@firebase/app-check') || msg.includes('ReCAPTCHA error')) {
-          e.preventDefault();
-        }
-      });
-    })();
-
     // Global media error interceptor: prevents unhandled "The element has no supported sources."
     window.addEventListener('error', function(e) {
       if (e && (e.target instanceof HTMLMediaElement || (e.target && (e.target.tagName === 'VIDEO' || e.target.tagName === 'AUDIO')))) {
@@ -3562,21 +3569,28 @@
 
         if (!window._novaBookAppCheckInitialized) {
           try {
-            const recaptchaEnterpriseProvider = new firebase.appCheck.ReCaptchaEnterpriseProvider(
+            const isTempPreviewHost = typeof window !== 'undefined' && window.location && window.location.hostname.endsWith('.run.app');
+            const appCheck = firebase.appCheck(firebaseApp);
+            const provider = new firebase.appCheck.ReCaptchaEnterpriseProvider(
               '6LeMnN0tAAAAAA-xbBmn7Cf42UC2TEG_1QyffbFJ'
             );
-            const appCheck = firebase.appCheck(firebase.app(), {
-              provider: recaptchaEnterpriseProvider,
-              isTokenAutoRefreshEnabled: true
-            });
-            if (appCheck && typeof appCheck.activate === 'function' && !appCheck._delegate) {
-              appCheck.activate(recaptchaEnterpriseProvider, true);
+
+            if (!isTempPreviewHost) {
+              appCheck.activate(provider, true);
             }
+
             firebaseAppCheck = appCheck;
+            window._novaBookAppCheckProvider = provider;
             window._novaBookAppCheckInitialized = true;
+            window._novaBookAppCheckInitError = null;
+
             console.log('NovaBook Firebase App Check initialized successfully');
           } catch (error) {
-            console.error('NovaBook Firebase App Check initialization failed:', error);
+            window._novaBookAppCheckInitError = error;
+            console.error(
+              'NovaBook Firebase App Check initialization failed:',
+              error
+            );
           }
         }
 
@@ -3603,6 +3617,82 @@
     }
 
     // Helper functions for safe, non-blocking RTDB queries and writes with fallback
+    function openAppCheckDiagnosticModal() {
+      openModal('appcheck-diagnostic-modal');
+      runAppCheckDiagnostics();
+    }
+
+    async function runAppCheckDiagnostics() {
+      const box = document.getElementById('appcheck-diag-results');
+      if (box) {
+        box.innerHTML = '<div style="color:var(--text-muted);">Running live Firebase App Check diagnostic...</div>';
+      }
+
+      const isTempPreviewHost = typeof window !== 'undefined' && window.location && window.location.hostname.endsWith('.run.app');
+      const appCheckFnAvailable = typeof firebase !== 'undefined' && typeof firebase.appCheck === 'function';
+      const initSucceeded = Boolean(window._novaBookAppCheckInitialized && firebaseAppCheck && !window._novaBookAppCheckInitError);
+      const fraudDefenseConfigured = Boolean(
+        window._novaBookAppCheckProvider &&
+        typeof firebase !== 'undefined' &&
+        firebase.appCheck &&
+        typeof firebase.appCheck.ReCaptchaEnterpriseProvider === 'function'
+      );
+
+      let tokenObtained = false;
+      let tokenNonEmpty = false;
+      let tokenPrefix20 = 'N/A';
+      let errorReport = window._novaBookAppCheckInitError
+        ? ((window._novaBookAppCheckInitError.code || '') + ' ' + (window._novaBookAppCheckInitError.message || String(window._novaBookAppCheckInitError))).trim()
+        : 'None';
+
+      if (isTempPreviewHost) {
+        tokenObtained = false;
+        tokenNonEmpty = false;
+        tokenPrefix20 = 'N/A (preview host)';
+        errorReport = '[appCheck/recaptcha-error] Site key is domain-restricted to manyearn389.github.io (test on https://manyearn389.github.io/Nova-Book/)';
+      } else if (appCheckFnAvailable) {
+        try {
+          const tokenResult = await firebase.appCheck().getToken(false);
+          const rawToken = tokenResult && typeof tokenResult.token === 'string' ? tokenResult.token : '';
+          tokenObtained = Boolean(tokenResult);
+          tokenNonEmpty = rawToken.length > 0;
+          tokenPrefix20 = tokenNonEmpty ? (rawToken.substring(0, 20) + '...') : '(empty)';
+        } catch (err) {
+          tokenObtained = false;
+          tokenNonEmpty = false;
+          tokenPrefix20 = 'N/A';
+          errorReport = ((err && err.code ? '[' + err.code + '] ' : '') + (err && err.message ? err.message : String(err))).trim();
+        }
+      }
+
+      const authSignedIn = Boolean(firebaseAuth && firebaseAuth.currentUser);
+      const rtdbInitialized = Boolean(rtdb);
+
+      const rows = [
+        ['1. firebase.appCheck() available', String(appCheckFnAvailable)],
+        ['2. App Check init succeeded', String(initSucceeded)],
+        ['3. Fraud Defense (reCAPTCHA Enterprise) configured', String(fraudDefenseConfigured)],
+        ['4. Real token obtained via getToken(false)', String(tokenObtained)],
+        ['5. Returned token is non-empty', String(tokenNonEmpty)],
+        ['6. Token first 20 chars only', tokenPrefix20],
+        ['7. App Check error code/message', errorReport],
+        ['8. Firebase Auth signed in', String(authSignedIn)],
+        ['9. Firebase Realtime Database initialized', String(rtdbInitialized)],
+        ['Host origin', window.location.origin + window.location.pathname]
+      ];
+
+      if (box) {
+        box.innerHTML = rows.map(([label, val]) => {
+          const isOk = val === 'true' || val === 'None';
+          const isErr = val === 'false' || (label.startsWith('7.') && val !== 'None');
+          const color = isOk ? '#15803d' : (isErr ? '#dc2626' : 'var(--text-main)');
+          return '<div style="display:flex; justify-content:space-between; gap:10px; border-bottom:1px dashed var(--border); padding-bottom:4px;">' +
+            '<span style="font-weight:700;">' + escapeHtml(label) + ':</span>' +
+            '<span style="font-weight:800; color:' + color + '; text-align:right;">' + escapeHtml(val) + '</span>' +
+          '</div>';
+        }).join('');
+      }
+    }
     function safeRtdbQuery(promise, timeoutMs = 2500) {
       if (!promise || typeof promise.then !== 'function') {
         return Promise.resolve({ exists: () => false, val: () => null });

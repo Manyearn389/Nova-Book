@@ -12,10 +12,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <!-- Firebase App & Firebase Realtime Database & Auth SDKs -->
+  <!-- Firebase App, Realtime Database, Auth & Storage SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
   <style>
     :root {
       --bg: #f8faf5;
@@ -1511,6 +1512,11 @@
     .creator-menu-text { font-size: 1.15rem; font-weight: 600; color: var(--text-main); letter-spacing: -0.01em; }
     .creator-menu-divider { height: 1px; background: var(--border); width: 100%; margin: 0; }
     .menu-modal-backdrop, .settings-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1060; display: none; align-items: flex-end; justify-content: center; backdrop-filter: blur(4px); }
+    .menu-modal-backdrop.active, .settings-modal-backdrop.active, .creator-menu-modal.active, .modal-backdrop.active { display: flex !important; }
+    .alert-success { background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 10px 12px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; margin-bottom: 12px; display: none; }
+    .auth-mode-tabs { display: flex; gap: 6px; background: var(--bg); padding: 5px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 16px; }
+    .auth-mode-tab { flex: 1; padding: 8px 6px; border: none; border-radius: 8px; background: transparent; color: var(--text-muted); font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.15s ease; text-align: center; }
+    .auth-mode-tab.active { background: var(--primary); color: #fff; box-shadow: 0 2px 6px rgba(21, 128, 61, 0.25); }
     @media (min-width: 640px) { .menu-modal-backdrop, .settings-modal-backdrop { align-items: center; } }
     .menu-modal-sheet, .settings-modal-sheet { background: var(--card-bg); width: 100%; max-width: 520px; max-height: 88vh; border-top-left-radius: 20px; border-top-right-radius: 20px; overflow-y: auto; box-shadow: 0 -8px 30px rgba(0,0,0,0.2); padding: 16px; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box; border: 1px solid var(--border); animation: slideUpMenu 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
     @media (min-width: 640px) { .menu-modal-sheet, .settings-modal-sheet { border-radius: 20px; max-height: 82vh; } }
@@ -1593,11 +1599,17 @@
         <button class="btn-icon" onclick="navigateTo('messages-view')" title="Messages">
           <i class="fa-solid fa-paper-plane"></i>
         </button>
+        <button class="btn-icon" onclick="if(currentUser) viewUserProfile(currentUser.uid || currentUser.id); else navigateTo('profile-view');" title="My Dashboard / Profile">
+          <i class="fa-solid fa-user"></i>
+        </button>
         <button class="btn-icon" id="header-settings-btn" onclick="openSettingsModal()" title="Settings">
           <i class="fa-solid fa-gear"></i>
         </button>
         <button class="btn-icon" id="header-menu-btn" onclick="openNavMenuModal()" title="Menu">
           <i class="fa-solid fa-bars"></i>
+        </button>
+        <button class="btn-icon" id="header-logout-btn" onclick="handleSignOut()" title="Log Out" style="color:#dc2626;">
+          <i class="fa-solid fa-right-from-bracket"></i>
         </button>
       </div>
     </header>
@@ -1606,31 +1618,75 @@
     <main id="main-content">
       <!-- 1. AUTH VIEW -->
       <section id="auth-view" class="view active">
-        <div class="card" style="margin-top: 20px;">
-          <div style="text-align:center; margin-bottom: 16px;">
-            <div style="font-size:2rem; color:var(--primary);"><i class="fa-solid fa-seedling"></i></div>
-            <h2 id="auth-title" style="font-weight:800; font-size:1.4rem;">Join NovaBook</h2>
-            <p style="font-size:0.85rem; color:var(--text-muted);">The fresh green social network</p>
+        <div class="card" style="margin-top: 20px; max-width: 440px; margin-left: auto; margin-right: auto; padding: 20px;">
+          <div style="text-align:center; margin-bottom: 14px;">
+            <div style="font-size:2.2rem; color:var(--primary);"><i class="fa-solid fa-seedling"></i></div>
+            <h2 id="auth-title" style="font-weight:800; font-size:1.4rem; margin-bottom:2px;">Welcome to NovaBook</h2>
+            <p id="auth-subtitle" style="font-size:0.84rem; color:var(--text-muted);">Log in, create an account, or reset your password</p>
           </div>
+
+          <!-- Auth Mode Switcher Tabs -->
+          <div class="auth-mode-tabs">
+            <button type="button" class="auth-mode-tab" id="auth-tab-login" onclick="setAuthMode('login')">
+              <i class="fa-solid fa-right-to-bracket"></i> Log In
+            </button>
+            <button type="button" class="auth-mode-tab active" id="auth-tab-signup" onclick="setAuthMode('signup')">
+              <i class="fa-solid fa-user-plus"></i> Sign Up
+            </button>
+            <button type="button" class="auth-mode-tab" id="auth-tab-forgot" onclick="setAuthMode('forgot')">
+              <i class="fa-solid fa-key"></i> Forgot Password
+            </button>
+          </div>
+
           <div id="auth-error" class="alert-error"></div>
-          <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+          <div id="auth-success" class="alert-success"></div>
+
+          <form id="auth-form" onsubmit="handleAuthSubmit(event)" novalidate>
             <div class="form-group" id="signup-name-group">
               <label for="auth-name">Full Name</label>
-              <input type="text" id="auth-name" class="form-control" placeholder="Jane Doe">
+              <input type="text" id="auth-name" class="form-control" placeholder="Enter your full name">
             </div>
-            <div class="form-group">
+
+            <div class="form-group" id="auth-email-group">
               <label for="auth-email">Email Address</label>
-              <input type="email" id="auth-email" class="form-control" placeholder="jane@example.com" required>
+              <input type="email" id="auth-email" class="form-control" placeholder="you@example.com" required>
             </div>
-            <div class="form-group">
-              <label for="auth-password">Password (6+ chars)</label>
-              <input type="password" id="auth-password" class="form-control" placeholder="••••••••" minlength="6" required>
+
+            <div class="form-group" id="auth-password-group">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <label for="auth-password" style="margin-bottom:0;">Password (6+ chars)</label>
+                <a href="javascript:void(0)" onclick="setAuthMode('forgot')" id="auth-forgot-inline-link" style="font-size:0.76rem; color:var(--primary); font-weight:700; text-decoration:none;">Forgot Password?</a>
+              </div>
+              <div style="position:relative;">
+                <input type="password" id="auth-password" class="form-control" placeholder="••••••••" minlength="6" style="padding-right:40px;">
+                <button type="button" onclick="toggleAuthPasswordVisibility('auth-password', 'auth-pass-eye')" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.9rem;" title="Show/Hide Password">
+                  <i class="fa-solid fa-eye" id="auth-pass-eye"></i>
+                </button>
+              </div>
             </div>
-            <button type="submit" id="auth-submit-btn" class="btn btn-primary" style="width:100%; margin-top:8px;">Sign Up</button>
+
+            <div class="form-group" id="forgot-new-password-group" style="display:none;">
+              <label for="auth-new-password">New Password (6+ chars)</label>
+              <div style="position:relative;">
+                <input type="password" id="auth-new-password" class="form-control" placeholder="Enter new password (6+ chars)" minlength="6" style="padding-right:40px;">
+                <button type="button" onclick="toggleAuthPasswordVisibility('auth-new-password', 'auth-new-pass-eye')" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.9rem;" title="Show/Hide Password">
+                  <i class="fa-solid fa-eye" id="auth-new-pass-eye"></i>
+                </button>
+              </div>
+              <span style="font-size:0.74rem; color:var(--text-muted); margin-top:4px; display:block;">Enter your email and choose a new password to reset immediately (also sends a Firebase reset link).</span>
+            </div>
+
+            <button type="submit" id="auth-submit-btn" class="btn btn-primary" style="width:100%; margin-top:8px; padding:10px; font-weight:800; font-size:0.95rem;">Create Account (Sign Up)</button>
           </form>
-          <div style="text-align:center; margin-top:14px; font-size:0.85rem;">
-            <span id="auth-toggle-text">Already have an account?</span>
-            <a href="javascript:void(0)" onclick="toggleAuthMode()" id="auth-toggle-link" style="color:var(--primary); font-weight:700; text-decoration:none;">Log In</a>
+
+          <div style="text-align:center; margin-top:14px; font-size:0.85rem; display:flex; flex-direction:column; gap:6px;">
+            <div>
+              <span id="auth-toggle-text">Already have an account?</span>
+              <a href="javascript:void(0)" onclick="toggleAuthMode()" id="auth-toggle-link" style="color:var(--primary); font-weight:700; text-decoration:none;">Log In</a>
+            </div>
+            <div id="auth-bottom-forgot-wrap">
+              <a href="javascript:void(0)" onclick="setAuthMode('forgot')" style="color:var(--text-muted); font-weight:600; font-size:0.8rem; text-decoration:underline;">Forgot your password? Reset here</a>
+            </div>
           </div>
         </div>
       </section>
@@ -1910,9 +1966,15 @@
                 <input type="file" id="quick-avatar-file-input" accept="image/*" style="display:none;" onchange="handleQuickAvatarSelected(event)">
               </div>
 
-              <div id="profile-owner-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button class="btn btn-outline btn-sm" onclick="openEditProfileModal()" style="font-weight:700;">
-                  <i class="fa-solid fa-pen"></i> Edit Profile / Photo / Theme / Banner / Logo
+              <div id="profile-owner-actions" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                <button type="button" class="btn btn-outline btn-sm" onclick="openEditProfileModal()" style="font-weight:700;">
+                  <i class="fa-solid fa-pen"></i> Edit Profile
+                </button>
+                <button type="button" class="btn btn-outline btn-sm" onclick="handleSignOut()" style="font-weight:700; color:#dc2626; border-color:#fca5a5;">
+                  <i class="fa-solid fa-right-from-bracket"></i> Log Out
+                </button>
+                <button type="button" class="btn btn-outline btn-sm" onclick="openDeleteAccountModal()" style="font-weight:700; color:#fff; background:#dc2626; border-color:#dc2626;">
+                  <i class="fa-solid fa-user-xmark"></i> Delete Account
                 </button>
               </div>
               <div id="profile-visitor-actions" style="display:none; gap:6px; flex-wrap:wrap;">
@@ -1949,7 +2011,7 @@
                   <span>Total Views</span>
                 </div>
                 <div class="profile-stat-box" onclick="switchProfileTab('friends')">
-                  <strong id="profile-stat-followers">1</strong>
+                  <strong id="profile-stat-followers">0</strong>
                   <span>Friends</span>
                 </div>
               </div>
@@ -2429,6 +2491,14 @@
           <button type="submit" class="btn btn-primary" id="save-profile-btn" style="width:100%; font-weight:800; padding:10px;">
             <i class="fa-solid fa-check"></i> Save Photo, Theme, Banner & Logo
           </button>
+          <div style="display:flex; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
+            <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('profile-modal'); handleSignOut();" style="flex:1; color:#dc2626; border-color:#fca5a5; font-weight:700;">
+              <i class="fa-solid fa-right-from-bracket"></i> Log Out
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('profile-modal'); openDeleteAccountModal();" style="flex:1; color:#fff; background:#dc2626; border-color:#dc2626; font-weight:700;">
+              <i class="fa-solid fa-user-xmark"></i> Delete Account
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -3203,10 +3273,16 @@
           </div>
         </div>
 
-        <button class="btn btn-outline" style="width:100%; border-color:#fca5a5; color:#dc2626; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; padding:10px; cursor:pointer;" onclick="closeNavMenuModal(); handleSignOut();">
-          <i class="fa-solid fa-right-from-bracket"></i>
-          <span>Log Out of NovaBook</span>
-        </button>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <button type="button" class="btn btn-outline" style="width:100%; border-color:#fca5a5; color:#dc2626; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; padding:10px; cursor:pointer;" onclick="closeNavMenuModal(); handleSignOut();">
+            <i class="fa-solid fa-right-from-bracket"></i>
+            <span>Log Out of NovaBook</span>
+          </button>
+          <button type="button" class="btn btn-outline" style="width:100%; background:#fef2f2; border-color:#f87171; color:#b91c1c; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; padding:10px; cursor:pointer;" onclick="closeNavMenuModal(); openDeleteAccountModal();">
+            <i class="fa-solid fa-user-xmark"></i>
+            <span>Delete My Account Permanently</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -3324,10 +3400,42 @@
           </div>
         </div>
 
-        <button class="btn btn-outline" style="width:100%; border-color:#fca5a5; color:#dc2626; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; padding:10px; margin-top:6px; cursor:pointer;" onclick="closeSettingsModal(); handleSignOut();">
-          <i class="fa-solid fa-right-from-bracket"></i>
-          <span>Log Out</span>
-        </button>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+          <button type="button" class="btn btn-outline" style="width:100%; border-color:#fca5a5; color:#dc2626; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; padding:10px; cursor:pointer;" onclick="closeSettingsModal(); handleSignOut();">
+            <i class="fa-solid fa-right-from-bracket"></i>
+            <span>Log Out</span>
+          </button>
+          <button type="button" class="btn btn-outline" style="width:100%; background:#fef2f2; border-color:#f87171; color:#b91c1c; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; padding:10px; cursor:pointer;" onclick="closeSettingsModal(); openDeleteAccountModal();">
+            <i class="fa-solid fa-user-xmark"></i>
+            <span>Delete Account</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Account Confirmation Modal -->
+    <div id="delete-account-modal" class="modal-backdrop" onclick="if(event.target === this) closeModal('delete-account-modal')" style="display:none; z-index:1100;">
+      <div class="modal-content" style="max-width:420px; border:2px solid #fecaca;">
+        <div class="modal-header" style="border-bottom-color:#fee2e2;">
+          <span style="display:flex; align-items:center; gap:8px; color:#dc2626; font-weight:800;">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>Delete Account Permanently</span>
+          </span>
+          <button type="button" class="btn-icon" style="width:28px; height:28px;" onclick="closeModal('delete-account-modal')">&times;</button>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:12px; padding:4px 0;">
+          <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:12px; font-size:0.84rem; color:#991b1b; line-height:1.45;">
+            <strong>Are you sure you want to delete your account?</strong>
+            <div id="delete-account-user-summary" style="margin-top:6px; font-weight:700; color:#7f1d1d;"></div>
+            <p style="margin:6px 0 0; font-size:0.78rem;">This will permanently delete your profile, uploaded videos, reels, posts, and account credentials from NovaBook.</p>
+          </div>
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="btn btn-outline" onclick="closeModal('delete-account-modal')" style="flex:1;">Cancel</button>
+            <button type="button" class="btn" id="confirm-delete-account-btn" onclick="confirmDeleteAccount()" style="flex:1.4; background:#dc2626; color:#fff; border:none; font-weight:800; padding:10px 14px; border-radius:10px; cursor:pointer;">
+              <i class="fa-solid fa-trash-can"></i> Yes, Delete Account
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -3359,32 +3467,22 @@
 
     /* =========================================================================
        FIREBASE CONFIGURATION & INITIALIZATION
-       Add and initialize Firebase using exactly the provided credentials.
+       Add and initialize Firebase using the provided nova-book credentials.
        ========================================================================= */
-    const rawFirebaseConfig = {
-      apiKey: "Your Api",
-      authDomain: "nova book",
-      databaseURL: "novabook.com",
-      projectId: "Nova Book",
-      storageBucket: "Nova",
-      messagingSenderId: "1234567890",
-      appId: "1234567890"
-    };
-
-    // Format databaseURL to satisfy Firebase Realtime Database SDK URL validator without fatal parsing error
-    let formattedDbUrl = rawFirebaseConfig.databaseURL;
-    if (!formattedDbUrl.startsWith('https://') && !formattedDbUrl.startsWith('http://')) {
-      formattedDbUrl = 'https://novabook-default-rtdb.firebaseio.com';
-    }
-
     const firebaseConfig = {
-      ...rawFirebaseConfig,
-      databaseURL: formattedDbUrl
+      apiKey: "AIzaSyASutQN3YS1VjgG4UTBf4jJWJZKHhC0QiY",
+      authDomain: "nova-book.firebaseapp.com",
+      databaseURL: "https://nova-book-default-rtdb.firebaseio.com",
+      projectId: "nova-book",
+      storageBucket: "nova-book.firebasestorage.app",
+      messagingSenderId: "510965623672",
+      appId: "1:510965623672:web:5fef626b1acc9d8414b68d"
     };
 
     let firebaseApp = null;
     let rtdb = null;
     let firebaseAuth = null;
+    let firebaseStorage = null;
 
     function wrapRef(ref) {
       if (!ref || ref._wrappedSafe) return ref;
@@ -3395,7 +3493,7 @@
           const p = origSet(...args);
           return Promise.race([
             p,
-            new Promise(res => setTimeout(() => res(null), 350))
+            new Promise(res => setTimeout(() => res(null), 2500))
           ]).catch(() => null);
         };
       }
@@ -3405,7 +3503,7 @@
           const p = origUpdate(...args);
           return Promise.race([
             p,
-            new Promise(res => setTimeout(() => res(null), 350))
+            new Promise(res => setTimeout(() => res(null), 2500))
           ]).catch(() => null);
         };
       }
@@ -3415,7 +3513,7 @@
           const p = origOnce(...args);
           return Promise.race([
             p,
-            new Promise(res => setTimeout(() => res({ exists: () => false, val: () => null }), 450))
+            new Promise(res => setTimeout(() => res({ exists: () => false, val: () => null }), 2500))
           ]).catch(() => ({ exists: () => false, val: () => null }));
         };
       }
@@ -3432,7 +3530,7 @@
           const p = origRemove(...args);
           return Promise.race([
             p,
-            new Promise(res => setTimeout(() => res(null), 350))
+            new Promise(res => setTimeout(() => res(null), 2500))
           ]).catch(() => null);
         };
       }
@@ -3441,7 +3539,7 @@
 
     try {
       if (typeof firebase !== 'undefined') {
-        firebaseApp = firebase.initializeApp(firebaseConfig);
+        firebaseApp = firebase.apps && firebase.apps.length > 0 ? firebase.app() : firebase.initializeApp(firebaseConfig);
         try {
           rtdb = firebase.database();
           if (rtdb) {
@@ -3459,13 +3557,20 @@
         } catch (authErr) {
           console.warn('Firebase Auth note:', authErr);
         }
+        try {
+          if (typeof firebase.storage === 'function') {
+            firebaseStorage = firebase.storage();
+          }
+        } catch (storageErr) {
+          console.warn('Firebase Storage note:', storageErr);
+        }
       }
     } catch (e) {
       console.warn('Firebase init note:', e);
     }
 
     // Helper functions for safe, non-blocking RTDB queries and writes with fallback
-    function safeRtdbQuery(promise, timeoutMs = 500) {
+    function safeRtdbQuery(promise, timeoutMs = 2500) {
       if (!promise || typeof promise.then !== 'function') {
         return Promise.resolve({ exists: () => false, val: () => null });
       }
@@ -3475,7 +3580,7 @@
       ]).catch(() => ({ exists: () => false, val: () => null }));
     }
 
-    function safeRtdbWrite(promise, timeoutMs = 500) {
+    function safeRtdbWrite(promise, timeoutMs = 2500) {
       if (!promise || typeof promise.then !== 'function') return Promise.resolve();
       return Promise.race([
         promise,
@@ -3491,14 +3596,14 @@
     let currentUser = {
       id: 'demo_user_active',
       uid: 'demo_user_active',
-      email: 'demo@novabook.app',
-      displayName: 'Nova Explorer'
+      email: 'user@novabook.app',
+      displayName: 'My Profile'
     };
     let currentProfile = {
       id: 'demo_user_active',
-      full_name: 'Nova Explorer',
+      full_name: 'My Profile',
       avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
-      bio: 'Exploring NovaBook with copyright-free music & stories!',
+      bio: '',
       cover_url: null
     };
     let authMode = 'signup';
@@ -3805,15 +3910,14 @@
     }
 
     function isOwnedByCurrentUser(item) {
-      if (!item) return false;
+      if (!item || !currentUser) return false;
+      const myId = String(currentUser.uid || currentUser.id || '');
+      if (!myId || myId === 'demo_user_active') return false;
       const itemId = String(item.id || '');
       const ownerId = String(item.user_id || item.host_id || item.author_id || '');
       if (itemId.startsWith('demo_') || ['reel_1', 'reel_2', 'reel_3'].includes(itemId)) return false;
-      if (['demo_author_1', 'demo_author_2', 'demo_author_3', 'demo_author_4', 'demo_author_5'].includes(ownerId)) return false;
-      if (item.is_local_owner === true) return true;
-      const myId = currentUser ? String(currentUser.uid || currentUser.id || '') : 'demo_user_active';
-      if (ownerId === myId || ownerId === 'demo_user_active') return true;
-      return false;
+      if (['demo_author_1', 'demo_author_2', 'demo_author_3', 'demo_author_4', 'demo_author_5', 'demo_user_active'].includes(ownerId)) return false;
+      return ownerId === myId;
     }
 
     function getStoredLocalPosts() {
@@ -3822,13 +3926,16 @@
         if (!raw) return [];
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return [];
+        const myId = currentUser ? String(currentUser.uid || currentUser.id || '') : '';
         return parsed.filter(p => {
           if (!p || !p.id) return false;
+          const ownerId = String(p.user_id || p.host_id || p.author_id || '');
+          if (!ownerId || ownerId === 'demo_user_active') return false;
           if (String(p.id).startsWith('post_live_') && !p.video_url && !p.image_url) return false;
           if (p.video_url && p.video_url.startsWith('data:video/')) {
             p.video_url = sanitizeVideoDataUrl(p.video_url);
           }
-          p.is_local_owner = true;
+          p.is_local_owner = !!(myId && ownerId === myId);
           return true;
         });
       } catch (e) {
@@ -4156,22 +4263,26 @@
     ];
 
     /* =========================================================================
-       PERSISTENT FOLLOW, VIEWS, LIKES & COMMENTS HELPERS
+       PERSISTENT FOLLOW, VIEWS, LIKES & COMMENTS HELPERS (PER-USER SCOPED)
        ========================================================================= */
     function getFollowedUsersSet() {
       try {
-        const raw = localStorage.getItem('novabook_followed_users');
+        const myId = currentUser ? String(currentUser.uid || currentUser.id || '') : '';
+        if (!myId || myId === 'demo_user_active') return new Set();
+        const raw = localStorage.getItem('novabook_followed_users_' + myId);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) return new Set(parsed.map(String));
         }
       } catch (e) {}
-      return new Set(['demo_author_1', 'demo_author_2']);
+      return new Set();
     }
 
     function saveFollowedUsersSet(set) {
       try {
-        localStorage.setItem('novabook_followed_users', JSON.stringify(Array.from(set)));
+        const myId = currentUser ? String(currentUser.uid || currentUser.id || '') : '';
+        if (!myId || myId === 'demo_user_active') return;
+        localStorage.setItem('novabook_followed_users_' + myId, JSON.stringify(Array.from(set)));
       } catch (e) {}
     }
 
@@ -4192,17 +4303,17 @@
     };
 
     function getVideoViewCount(itemId) {
-      if (!itemId) return 1;
+      if (!itemId) return 0;
       const key = String(itemId);
       try {
         const raw = localStorage.getItem('novabook_video_views');
         const map = raw ? JSON.parse(raw) : {};
         if (typeof map[key] === 'number') return map[key];
       } catch (e) {}
-      if (DEFAULT_VIDEO_VIEWS[key]) return DEFAULT_VIDEO_VIEWS[key];
+      if (typeof DEFAULT_VIDEO_VIEWS[key] === 'number') return DEFAULT_VIDEO_VIEWS[key];
       const post = allFeedPostsCache[key];
       if (post && typeof post.views_count === 'number') return post.views_count;
-      return 12;
+      return 0;
     }
 
     function incrementVideoViewCount(itemId) {
@@ -4374,6 +4485,10 @@
 
     let composerSelectedSong = null;
     let storySelectedSong = null;
+    let reelSelectedSong = null;
+    let liveSelectedSong = null;
+    let currentComposerMediaType = null;
+    let currentComposerMediaUrl = null;
     let musicPickerTarget = 'post';
     let previewingAudio = null;
     let previewingSongId = null;
@@ -4430,138 +4545,574 @@
     }
 
     /* =========================================================================
-       AUTH FLOW & SESSION INITIALIZATION
+       AUTH FLOW, MULTI-ACCOUNT DB & SESSION INITIALIZATION
        ========================================================================= */
-    function toggleAuthMode() {
-      authMode = authMode === 'signup' ? 'login' : 'signup';
+    function getStoredAccountsMap() {
+      try {
+        const raw = localStorage.getItem('novabook_accounts_db_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
+      } catch (e) {}
+      return {};
+    }
+
+    function saveStoredAccountsMap(map) {
+      try {
+        localStorage.setItem('novabook_accounts_db_v1', JSON.stringify(map || {}));
+      } catch (e) {}
+    }
+
+    function getDeletedEmailsSet() {
+      try {
+        const raw = localStorage.getItem('novabook_deleted_emails_v1');
+        const arr = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(arr) ? arr : []);
+      } catch (e) {
+        return new Set();
+      }
+    }
+
+    function markEmailDeleted(email, isDeleted = true) {
+      try {
+        const key = String(email || '').trim().toLowerCase();
+        if (!key) return;
+        const set = getDeletedEmailsSet();
+        if (isDeleted) set.add(key);
+        else set.delete(key);
+        localStorage.setItem('novabook_deleted_emails_v1', JSON.stringify(Array.from(set)));
+      } catch (e) {}
+    }
+
+    function toggleAuthPasswordVisibility(inputId, iconId) {
+      const input = document.getElementById(inputId);
+      const icon = document.getElementById(iconId);
+      if (!input) return;
+      if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.className = 'fa-solid fa-eye-slash';
+      } else {
+        input.type = 'password';
+        if (icon) icon.className = 'fa-solid fa-eye';
+      }
+    }
+
+    function showAuthAlert(type, message) {
+      const errBanner = document.getElementById('auth-error');
+      const okBanner = document.getElementById('auth-success');
+      if (errBanner) errBanner.style.display = 'none';
+      if (okBanner) okBanner.style.display = 'none';
+      if (!message) return;
+      if (type === 'error' && errBanner) {
+        errBanner.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> ' + escapeHtml(message);
+        errBanner.style.display = 'block';
+      } else if (type === 'success' && okBanner) {
+        okBanner.innerHTML = '<i class="fa-solid fa-circle-check"></i> ' + escapeHtml(message);
+        okBanner.style.display = 'block';
+      }
+    }
+
+    function setAuthMode(mode, preserveAlert = false) {
+      authMode = (mode === 'login' || mode === 'signup' || mode === 'forgot') ? mode : 'login';
       const title = document.getElementById('auth-title');
+      const subtitle = document.getElementById('auth-subtitle');
       const submitBtn = document.getElementById('auth-submit-btn');
       const toggleText = document.getElementById('auth-toggle-text');
       const toggleLink = document.getElementById('auth-toggle-link');
       const nameGroup = document.getElementById('signup-name-group');
-      const errBanner = document.getElementById('auth-error');
-      if (errBanner) errBanner.style.display = 'none';
+      const passGroup = document.getElementById('auth-password-group');
+      const forgotNewPassGroup = document.getElementById('forgot-new-password-group');
+      const forgotInlineLink = document.getElementById('auth-forgot-inline-link');
+      const bottomForgotWrap = document.getElementById('auth-bottom-forgot-wrap');
+
+      const tabLogin = document.getElementById('auth-tab-login');
+      const tabSignup = document.getElementById('auth-tab-signup');
+      const tabForgot = document.getElementById('auth-tab-forgot');
+
+      if (tabLogin) tabLogin.classList.toggle('active', authMode === 'login');
+      if (tabSignup) tabSignup.classList.toggle('active', authMode === 'signup');
+      if (tabForgot) tabForgot.classList.toggle('active', authMode === 'forgot');
+
+      if (!preserveAlert) {
+        showAuthAlert(null, '');
+      }
 
       if (authMode === 'login') {
         if (title) title.textContent = 'Welcome Back';
+        if (subtitle) subtitle.textContent = 'Log in to your NovaBook account';
         if (submitBtn) submitBtn.textContent = 'Log In';
         if (toggleText) toggleText.textContent = "Don't have an account?";
         if (toggleLink) toggleLink.textContent = 'Sign Up';
         if (nameGroup) nameGroup.style.display = 'none';
-      } else {
+        if (passGroup) passGroup.style.display = 'flex';
+        if (forgotNewPassGroup) forgotNewPassGroup.style.display = 'none';
+        if (forgotInlineLink) forgotInlineLink.style.display = 'inline';
+        if (bottomForgotWrap) bottomForgotWrap.style.display = 'block';
+      } else if (authMode === 'signup') {
         if (title) title.textContent = 'Join NovaBook';
-        if (submitBtn) submitBtn.textContent = 'Sign Up';
+        if (subtitle) subtitle.textContent = 'Create a new account in seconds';
+        if (submitBtn) submitBtn.textContent = 'Create Account (Sign Up)';
         if (toggleText) toggleText.textContent = 'Already have an account?';
         if (toggleLink) toggleLink.textContent = 'Log In';
         if (nameGroup) nameGroup.style.display = 'flex';
+        if (passGroup) passGroup.style.display = 'flex';
+        if (forgotNewPassGroup) forgotNewPassGroup.style.display = 'none';
+        if (forgotInlineLink) forgotInlineLink.style.display = 'none';
+        if (bottomForgotWrap) bottomForgotWrap.style.display = 'block';
+      } else if (authMode === 'forgot') {
+        if (title) title.textContent = 'Reset Your Password';
+        if (subtitle) subtitle.textContent = 'Enter your email and set a new password';
+        if (submitBtn) submitBtn.textContent = 'Reset Password Now';
+        if (toggleText) toggleText.textContent = 'Remembered your password?';
+        if (toggleLink) toggleLink.textContent = 'Back to Log In';
+        if (nameGroup) nameGroup.style.display = 'none';
+        if (passGroup) passGroup.style.display = 'none';
+        if (forgotNewPassGroup) forgotNewPassGroup.style.display = 'flex';
+        if (bottomForgotWrap) bottomForgotWrap.style.display = 'none';
       }
+    }
+
+    function toggleAuthMode() {
+      if (authMode === 'signup') {
+        setAuthMode('login');
+      } else if (authMode === 'forgot') {
+        setAuthMode('login');
+      } else {
+        setAuthMode('signup');
+      }
+    }
+
+    function makeUserIdFromEmail(email) {
+      const clean = String(email || 'user').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+      return 'user_' + clean;
     }
 
     async function handleAuthSubmit(e) {
-      e.preventDefault();
-      const email = document.getElementById('auth-email').value.trim();
-      const password = document.getElementById('auth-password').value;
-      const fullName = document.getElementById('auth-name').value.trim();
-      const errBanner = document.getElementById('auth-error');
-      if (errBanner) errBanner.style.display = 'none';
+      if (e) e.preventDefault();
+      const emailInput = document.getElementById('auth-email');
+      const passInput = document.getElementById('auth-password');
+      const nameInput = document.getElementById('auth-name');
+      const newPassInput = document.getElementById('auth-new-password');
 
-      if (firebaseAuth) {
-        try {
-          if (authMode === 'signup') {
+      const email = (emailInput ? emailInput.value : '').trim();
+      const emailKey = email.toLowerCase();
+      const password = passInput ? passInput.value : '';
+      const fullName = (nameInput ? nameInput.value : '').trim();
+      const newPassword = newPassInput ? newPassInput.value : '';
+
+      showAuthAlert(null, '');
+
+      if (!email || !email.includes('@')) {
+        showAuthAlert('error', 'Please enter a valid email address.');
+        if (emailInput) emailInput.focus();
+        return;
+      }
+
+      // 1. FORGOT PASSWORD FLOW
+      if (authMode === 'forgot') {
+        if (!newPassword || newPassword.length < 6) {
+          showAuthAlert('error', 'Please enter a new password of at least 6 characters.');
+          if (newPassInput) newPassInput.focus();
+          return;
+        }
+        const accounts = getStoredAccountsMap();
+        if (firebaseAuth) {
+          try {
+            await firebaseAuth.sendPasswordResetEmail(email);
+          } catch (err) {
+            console.warn('Firebase password reset email note:', err.message);
+          }
+        }
+        const uid = (accounts[emailKey] && accounts[emailKey].uid) ? accounts[emailKey].uid : makeUserIdFromEmail(emailKey);
+        const existingAcc = accounts[emailKey] || {};
+        accounts[emailKey] = {
+          ...existingAcc,
+          uid: uid,
+          id: uid,
+          email: email,
+          password: newPassword,
+          full_name: existingAcc.full_name || email.split('@')[0] || 'My Profile',
+          avatar_url: existingAcc.avatar_url || getDefaultAvatar(uid),
+          updated_at: new Date().toISOString()
+        };
+        saveStoredAccountsMap(accounts);
+        markEmailDeleted(emailKey, false);
+
+        if (rtdb) {
+          try {
+            await safeRtdbWrite(rtdb.ref('accounts/' + uid).set(accounts[emailKey]), 600);
+          } catch (err) {}
+        }
+
+        if (passInput) passInput.value = newPassword;
+        if (newPassInput) newPassInput.value = '';
+        setAuthMode('login', true);
+        showAuthAlert('success', 'Password reset complete for ' + email + '! Click "Log In" below to continue.');
+        showToast('Password reset successfully! 🔐');
+        return;
+      }
+
+      // Validate password for Login / Signup
+      if (!password || password.length < 6) {
+        showAuthAlert('error', 'Password must be at least 6 characters long.');
+        if (passInput) passInput.focus();
+        return;
+      }
+
+      const accounts = getStoredAccountsMap();
+      const deletedSet = getDeletedEmailsSet();
+
+      // 2. SIGN UP FLOW (REAL ACCOUNT CREATION WITH FRESH 0 STATS)
+      if (authMode === 'signup') {
+        if (!fullName || fullName.length < 2) {
+          showAuthAlert('error', 'Please enter your Full Name (at least 2 characters) to sign up.');
+          if (nameInput) nameInput.focus();
+          return;
+        }
+        const displayName = fullName;
+        if (accounts[emailKey] && !deletedSet.has(emailKey)) {
+          showAuthAlert('error', 'An account with this email already exists. Please switch to Log In or use Forgot Password.');
+          return;
+        }
+
+        let uid = makeUserIdFromEmail(emailKey);
+        if (firebaseAuth) {
+          try {
             const userCred = await firebaseAuth.createUserWithEmailAndPassword(email, password);
             if (userCred && userCred.user) {
-              currentUser = userCred.user;
+              uid = userCred.user.uid || uid;
               try {
-                if (fullName) await currentUser.updateProfile({ displayName: fullName });
-              } catch(e) {}
-              if (rtdb) {
-                try {
-                  await rtdb.ref('profiles/' + currentUser.uid).set({
-                    id: currentUser.uid,
-                    full_name: fullName || 'New Nova',
-                    avatar_url: getDefaultAvatar(currentUser.uid),
-                    bio: 'Hey there! I am using NovaBook.',
-                    cover_url: null
-                  });
-                } catch(e) {}
-              }
-              await initializeSession();
+                await userCred.user.updateProfile({ displayName: displayName });
+              } catch (err) {}
+            }
+          } catch (err) {
+            if (err && err.code === 'auth/email-already-in-use' && accounts[emailKey]) {
+              showAuthAlert('error', 'This email is already registered. Please switch to Log In.');
               return;
             }
-          } else {
-            const userCred = await firebaseAuth.signInWithEmailAndPassword(email, password);
-            if (userCred && userCred.user) {
-              currentUser = userCred.user;
-              await initializeSession();
-              return;
-            }
+            console.warn('Firebase signup note:', err.message);
           }
-        } catch (err) {
-          console.warn('Firebase Auth note:', err.message);
+        }
+
+        // Ensure brand-new user starts with 0 friends, 0 follows, 0 posts, 0 videos
+        localStorage.setItem('novabook_followed_users_' + uid, '[]');
+        localStorage.setItem('novabook_friendships_' + uid, '[]');
+
+        const newAccount = {
+          uid: uid,
+          id: uid,
+          email: email,
+          password: password,
+          full_name: displayName,
+          avatar_url: getDefaultAvatar(uid),
+          bio: '',
+          cover_url: null,
+          logo_url: null,
+          logo_icon: '🌱',
+          logo_text: 'MY LOGO',
+          theme_gradient: 'linear-gradient(135deg, #15803d, #eab308)',
+          location: '',
+          website: '',
+          created_at: new Date().toISOString()
+        };
+
+        accounts[emailKey] = newAccount;
+        saveStoredAccountsMap(accounts);
+        markEmailDeleted(emailKey, false);
+        localStorage.setItem('novabook_active_account', emailKey);
+        localStorage.setItem('novabook_auth_state', 'logged_in');
+
+        currentUser = {
+          id: uid,
+          uid: uid,
+          email: email,
+          displayName: displayName
+        };
+        currentProfile = { ...newAccount };
+        saveUserProfileData(currentProfile);
+
+        if (rtdb) {
+          try {
+            await safeRtdbWrite(rtdb.ref('profiles/' + uid).set(currentProfile), 600);
+            await safeRtdbWrite(rtdb.ref('accounts/' + uid).set(newAccount), 600);
+          } catch (err) {}
+        }
+
+        await initializeSession();
+        showToast('Account created! Welcome to NovaBook, ' + displayName + ' 🎉');
+        return;
+      }
+
+      // 3. LOG IN FLOW (STRICT ACCOUNT & PASSWORD VERIFICATION)
+      if (deletedSet.has(emailKey) && !accounts[emailKey]) {
+        showAuthAlert('error', 'This account was permanently deleted. Please click "Sign Up" to create a new account.');
+        return;
+      }
+
+      let localAcc = accounts[emailKey];
+      if (!localAcc && rtdb) {
+        try {
+          const checkUid = makeUserIdFromEmail(emailKey);
+          const snap = await safeRtdbQuery(rtdb.ref('accounts/' + checkUid).once('value'), 600);
+          if (snap && snap.exists()) {
+            localAcc = snap.val();
+            accounts[emailKey] = localAcc;
+            saveStoredAccountsMap(accounts);
+          }
+        } catch (err) {}
+      }
+
+      if (localAcc) {
+        if (localAcc.password && localAcc.password !== password) {
+          showAuthAlert('error', 'Incorrect password for ' + email + '. Please try again or click "Forgot Password?".');
+          return;
         }
       }
 
-      // Smooth instant session fallback
-      const savedProf = getSavedUserProfileData();
+      let fbUser = null;
+      let fbAuthError = null;
+      if (firebaseAuth) {
+        try {
+          const userCred = await firebaseAuth.signInWithEmailAndPassword(email, password);
+          if (userCred && userCred.user) {
+            fbUser = userCred.user;
+          }
+        } catch (err) {
+          fbAuthError = err;
+        }
+      }
+
+      // If neither local registered account nor Firebase Auth account exists, reject fake login!
+      if (!localAcc && !fbUser) {
+        if (fbAuthError && (fbAuthError.code === 'auth/wrong-password' || fbAuthError.code === 'auth/invalid-credential')) {
+          showAuthAlert('error', 'Invalid email or password. If you do not have an account yet, please click "Sign Up" first.');
+        } else {
+          showAuthAlert('error', 'No account found with email "' + email + '". Please click "Sign Up" to create your account first.');
+        }
+        return;
+      }
+
+      const uid = (localAcc && localAcc.uid) || (fbUser && fbUser.uid) || makeUserIdFromEmail(emailKey);
+      const resolvedName = (localAcc && localAcc.full_name) || (fbUser && fbUser.displayName) || email.split('@')[0] || 'User';
+
+      const activeAccount = {
+        uid: uid,
+        id: uid,
+        email: email,
+        password: password,
+        full_name: resolvedName,
+        avatar_url: (localAcc && localAcc.avatar_url) || getDefaultAvatar(uid),
+        bio: (localAcc && localAcc.bio) || '',
+        cover_url: (localAcc && localAcc.cover_url) || null,
+        logo_url: (localAcc && localAcc.logo_url) || null,
+        logo_icon: (localAcc && localAcc.logo_icon) || '🌱',
+        logo_text: (localAcc && localAcc.logo_text) || 'MY LOGO',
+        theme_gradient: (localAcc && localAcc.theme_gradient) || 'linear-gradient(135deg, #15803d, #eab308)',
+        location: (localAcc && localAcc.location) || '',
+        website: (localAcc && localAcc.website) || ''
+      };
+
+      accounts[emailKey] = activeAccount;
+      saveStoredAccountsMap(accounts);
+      localStorage.setItem('novabook_active_account', emailKey);
+      localStorage.setItem('novabook_auth_state', 'logged_in');
+
       currentUser = {
-        id: 'demo_user_active',
-        uid: 'demo_user_active',
-        email: email || savedProf.email || 'user@novabook.app',
-        displayName: fullName || savedProf.full_name || 'My Profile'
+        id: uid,
+        uid: uid,
+        email: email,
+        displayName: activeAccount.full_name
       };
-      currentProfile = {
-        id: 'demo_user_active',
-        full_name: fullName || savedProf.full_name || 'My Profile',
-        avatar_url: savedProf.avatar_url || getDefaultAvatar('demo_user_active'),
-        bio: savedProf.bio || '',
-        cover_url: savedProf.cover_url || null,
-        logo_url: savedProf.logo_url || null,
-        theme_gradient: savedProf.theme_gradient || 'linear-gradient(135deg, #15803d, #eab308)',
-        location: savedProf.location || '',
-        website: savedProf.website || ''
-      };
+      currentProfile = { ...activeAccount };
       saveUserProfileData(currentProfile);
+
       if (rtdb) {
         try {
-          await rtdb.ref('profiles/demo_user_active').set(currentProfile);
-        } catch(e) {}
+          await safeRtdbWrite(rtdb.ref('profiles/' + uid).set(currentProfile), 600);
+        } catch (err) {}
       }
+
       await initializeSession();
+      showToast('Logged in as ' + activeAccount.full_name + '! 👋');
     }
 
     async function handleSignOut() {
+      window._isLoggingOut = true;
+      localStorage.setItem('novabook_auth_state', 'logged_out');
+      localStorage.removeItem('novabook_active_account');
+
+      closeModal('settings-modal');
+      closeModal('nav-menu-modal');
+      closeModal('profile-modal');
+      closeModal('delete-account-modal');
+
       if (firebaseAuth) {
         try { await firebaseAuth.signOut(); } catch(e) {}
       }
+
       currentUser = null;
       currentProfile = null;
-      document.getElementById('header-auth-actions').style.display = 'none';
-      document.getElementById('bottom-nav').style.display = 'none';
+
+      const headerAuth = document.getElementById('header-auth-actions');
+      if (headerAuth) headerAuth.style.display = 'none';
+      const bottomNav = document.getElementById('bottom-nav');
+      if (bottomNav) bottomNav.style.display = 'none';
       toggleAdMobBanner(false);
+
+      const passInput = document.getElementById('auth-password');
+      if (passInput) passInput.value = '';
+
+      setAuthMode('login', true);
+      showAuthAlert('success', 'You have logged out safely. Log in or sign up below.');
       navigateTo('auth-view');
+      showToast('Logged out successfully! 👋');
+
+      setTimeout(() => { window._isLoggingOut = false; }, 800);
+    }
+
+    function openDeleteAccountModal() {
+      closeModal('settings-modal');
+      closeModal('nav-menu-modal');
+      closeModal('profile-modal');
+      const summaryEl = document.getElementById('delete-account-user-summary');
+      if (summaryEl) {
+        const name = (currentProfile && currentProfile.full_name) || (currentUser && currentUser.displayName) || 'My Profile';
+        const email = (currentUser && currentUser.email) || (currentProfile && currentProfile.email) || '';
+        summaryEl.textContent = 'Account: ' + name + (email ? ' (' + email + ')' : '');
+      }
+      openModal('delete-account-modal');
+    }
+
+    async function confirmDeleteAccount() {
+      const uid = (currentUser && (currentUser.uid || currentUser.id)) || (currentProfile && currentProfile.id) || 'demo_user_active';
+      const email = ((currentUser && currentUser.email) || (currentProfile && currentProfile.email) || localStorage.getItem('novabook_active_account') || '').trim().toLowerCase();
+
+      window._isLoggingOut = true;
+
+      // 1. Delete all posts, videos & reels owned by this user
+      const allPosts = Object.values(allFeedPostsCache || {});
+      for (const p of allPosts) {
+        if (p && (String(p.user_id) === String(uid) || String(p.host_id) === String(uid) || p.is_local_owner)) {
+          markItemDeleted(p.id);
+          delete allFeedPostsCache[p.id];
+          removeLocalPost(p.id);
+          deleteVideoBlobFromIDB(p.id);
+          if (rtdb) {
+            try { safeRtdbWrite(rtdb.ref('posts/' + p.id).remove(), 400); } catch (e) {}
+          }
+        }
+      }
+
+      const localReels = getStoredLocalReels();
+      for (const r of localReels) {
+        if (r && (String(r.user_id) === String(uid) || r.is_local_owner)) {
+          markItemDeleted(r.id);
+          removeLocalReel(r.id);
+          deleteVideoBlobFromIDB(r.id);
+        }
+      }
+      mockReels = mockReels.filter(r => !(r && (String(r.user_id) === String(uid) || r.is_local_owner)));
+
+      // 2. Remove profile & account from RTDB and LocalStorage
+      if (rtdb && uid) {
+        try {
+          safeRtdbWrite(rtdb.ref('profiles/' + uid).remove(), 400);
+          safeRtdbWrite(rtdb.ref('accounts/' + uid).remove(), 400);
+        } catch (e) {}
+      }
+
+      if (email) {
+        const accounts = getStoredAccountsMap();
+        delete accounts[email];
+        saveStoredAccountsMap(accounts);
+        markEmailDeleted(email, true);
+      }
+
+      localStorage.removeItem('novabook_user_profile_v1');
+      localStorage.removeItem('novabook_active_account');
+      localStorage.removeItem('novabook_local_posts_v1');
+      localStorage.removeItem('novabook_local_reels_v1');
+      localStorage.setItem('novabook_auth_state', 'logged_out');
+      delete cachedUsers[uid];
+
+      // 3. Delete from Firebase Auth if signed in
+      if (firebaseAuth && firebaseAuth.currentUser) {
+        try {
+          await firebaseAuth.currentUser.delete();
+        } catch (e) {}
+        try {
+          await firebaseAuth.signOut();
+        } catch (e) {}
+      }
+
+      currentUser = null;
+      currentProfile = null;
+
+      closeModal('delete-account-modal');
+      const headerAuth = document.getElementById('header-auth-actions');
+      if (headerAuth) headerAuth.style.display = 'none';
+      const bottomNav = document.getElementById('bottom-nav');
+      if (bottomNav) bottomNav.style.display = 'none';
+      toggleAdMobBanner(false);
+
+      // Clear form inputs
+      const nameInput = document.getElementById('auth-name');
+      const emailInput = document.getElementById('auth-email');
+      const passInput = document.getElementById('auth-password');
+      if (nameInput) nameInput.value = '';
+      if (emailInput) emailInput.value = '';
+      if (passInput) passInput.value = '';
+
+      setAuthMode('signup', true);
+      showAuthAlert('success', 'Your account and all your uploaded videos/posts have been permanently deleted.');
+      navigateTo('auth-view');
+      showToast('Account deleted permanently.');
+
+      setTimeout(() => { window._isLoggingOut = false; }, 800);
     }
 
     function getSavedUserProfileData() {
+      const uid = (currentUser && (currentUser.uid || currentUser.id)) || '';
+      const activeEmail = (localStorage.getItem('novabook_active_account') || '').toLowerCase();
+      const accounts = getStoredAccountsMap();
+      const activeAcc = activeEmail && accounts[activeEmail] ? accounts[activeEmail] : null;
+      const targetUid = uid || (activeAcc && activeAcc.uid) || '';
+
       try {
-        const raw = localStorage.getItem('novabook_user_profile_v1');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object') {
-            if (parsed.full_name === 'Nova Explorer') parsed.full_name = 'My Profile';
-            if (parsed.bio && (parsed.bio.includes('Exploring NovaBook with copyright-free music') || parsed.bio.includes('Hey there! I am using NovaBook'))) {
-              parsed.bio = '';
-            }
-            return parsed;
+        if (targetUid) {
+          const rawPerUser = localStorage.getItem('novabook_user_profile_' + targetUid);
+          if (rawPerUser) {
+            const parsed = JSON.parse(rawPerUser);
+            if (parsed && typeof parsed === 'object') return parsed;
           }
+        }
+        if (activeAcc) {
+          return {
+            id: activeAcc.uid,
+            full_name: activeAcc.full_name || 'User',
+            email: activeAcc.email || '',
+            avatar_url: activeAcc.avatar_url || getDefaultAvatar(activeAcc.uid),
+            bio: activeAcc.bio || '',
+            cover_url: activeAcc.cover_url || null,
+            logo_url: activeAcc.logo_url || null,
+            logo_icon: activeAcc.logo_icon || '🌱',
+            logo_text: activeAcc.logo_text || 'MY LOGO',
+            theme_gradient: activeAcc.theme_gradient || 'linear-gradient(135deg, #15803d, #eab308)',
+            location: activeAcc.location || '',
+            website: activeAcc.website || ''
+          };
         }
       } catch (e) {}
       return {
-        id: 'demo_user_active',
-        full_name: 'My Profile',
-        avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+        id: targetUid || 'guest',
+        full_name: (currentUser && currentUser.displayName) || 'User',
+        avatar_url: getDefaultAvatar(targetUid || 'guest'),
         bio: '',
         cover_url: null,
         logo_url: null,
+        logo_icon: '🌱',
+        logo_text: 'MY LOGO',
         theme_gradient: 'linear-gradient(135deg, #15803d, #eab308)',
         location: '',
         website: ''
@@ -4573,15 +5124,12 @@
       try {
         const current = getSavedUserProfileData();
         const merged = { ...current, ...profileObj };
-        if (merged.full_name === 'Nova Explorer') merged.full_name = 'My Profile';
-        if (merged.bio && merged.bio.includes('Exploring NovaBook with copyright-free music')) {
-          merged.bio = '';
+        const uid = merged.id || (currentUser && (currentUser.uid || currentUser.id));
+        if (uid) {
+          localStorage.setItem('novabook_user_profile_' + uid, JSON.stringify(merged));
+          cachedUsers[uid] = { ...(cachedUsers[uid] || {}), ...merged };
         }
         localStorage.setItem('novabook_user_profile_v1', JSON.stringify(merged));
-        if (merged.id) {
-          cachedUsers[merged.id] = { ...(cachedUsers[merged.id] || {}), ...merged };
-        }
-        cachedUsers['demo_user_active'] = { ...(cachedUsers['demo_user_active'] || {}), ...merged };
       } catch (e) {}
     }
 
@@ -4590,62 +5138,50 @@
     }
 
     function checkAuthSession() {
-      const savedProf = getSavedUserProfileData();
-      if (firebaseAuth) {
-        try {
-          firebaseAuth.onAuthStateChanged(async (user) => {
-            if (user) {
-              currentUser = user;
-              await initializeSession();
-            } else {
-              currentUser = {
-                id: 'demo_user_active',
-                uid: 'demo_user_active',
-                email: savedProf.email || 'user@novabook.app',
-                displayName: savedProf.full_name || 'My Profile'
-              };
-              currentProfile = {
-                id: 'demo_user_active',
-                full_name: savedProf.full_name || 'My Profile',
-                avatar_url: savedProf.avatar_url || getDefaultAvatar('demo_user_active'),
-                bio: savedProf.bio || '',
-                cover_url: savedProf.cover_url || null,
-                logo_url: savedProf.logo_url || null,
-                theme_gradient: savedProf.theme_gradient || 'linear-gradient(135deg, #15803d, #eab308)',
-                location: savedProf.location || '',
-                website: savedProf.website || ''
-              };
-              document.getElementById('header-auth-actions').style.display = 'flex';
-              document.getElementById('bottom-nav').style.display = 'flex';
-              updateUserUI();
-              navigateTo('feed-view');
-            }
-          });
-          return;
-        } catch(e) {}
+      const authState = localStorage.getItem('novabook_auth_state');
+      const activeEmail = (localStorage.getItem('novabook_active_account') || '').toLowerCase();
+      const accounts = getStoredAccountsMap();
+      const activeAcc = activeEmail && accounts[activeEmail] ? accounts[activeEmail] : null;
+
+      if (authState === 'logged_out' || !activeAcc) {
+        currentUser = null;
+        currentProfile = null;
+        const headerAuth = document.getElementById('header-auth-actions');
+        if (headerAuth) headerAuth.style.display = 'none';
+        const bottomNav = document.getElementById('bottom-nav');
+        if (bottomNav) bottomNav.style.display = 'none';
+        setAuthMode(Object.keys(accounts).length > 0 ? 'login' : 'signup', true);
+        navigateTo('auth-view');
+        return;
       }
 
+      const uid = activeAcc.uid || makeUserIdFromEmail(activeEmail);
+      const savedProf = getSavedUserProfileData();
+
       currentUser = {
-        id: 'demo_user_active',
-        uid: 'demo_user_active',
-        email: savedProf.email || 'user@novabook.app',
-        displayName: savedProf.full_name || 'My Profile'
+        id: uid,
+        uid: uid,
+        email: activeAcc.email || savedProf.email || '',
+        displayName: activeAcc.full_name || savedProf.full_name || 'User'
       };
       currentProfile = {
-        id: 'demo_user_active',
-        full_name: savedProf.full_name || 'My Profile',
-        avatar_url: savedProf.avatar_url || getDefaultAvatar('demo_user_active'),
-        bio: savedProf.bio || '',
-        cover_url: savedProf.cover_url || null,
-        logo_url: savedProf.logo_url || null,
-        theme_gradient: savedProf.theme_gradient || 'linear-gradient(135deg, #15803d, #eab308)',
-        location: savedProf.location || '',
-        website: savedProf.website || ''
+        id: uid,
+        full_name: activeAcc.full_name || savedProf.full_name || 'User',
+        email: activeAcc.email || savedProf.email || '',
+        avatar_url: savedProf.avatar_url || activeAcc.avatar_url || getDefaultAvatar(uid),
+        bio: savedProf.bio !== undefined ? savedProf.bio : (activeAcc.bio || ''),
+        cover_url: savedProf.cover_url !== undefined ? savedProf.cover_url : (activeAcc.cover_url || null),
+        logo_url: savedProf.logo_url !== undefined ? savedProf.logo_url : (activeAcc.logo_url || null),
+        logo_icon: savedProf.logo_icon || activeAcc.logo_icon || '🌱',
+        logo_text: savedProf.logo_text || activeAcc.logo_text || 'MY LOGO',
+        theme_gradient: savedProf.theme_gradient || activeAcc.theme_gradient || 'linear-gradient(135deg, #15803d, #eab308)',
+        location: savedProf.location !== undefined ? savedProf.location : (activeAcc.location || ''),
+        website: savedProf.website !== undefined ? savedProf.website : (activeAcc.website || '')
       };
       document.getElementById('header-auth-actions').style.display = 'flex';
       document.getElementById('bottom-nav').style.display = 'flex';
       updateUserUI();
-      navigateTo('feed-view');
+      if (currentView === 'auth-view') navigateTo('feed-view');
     }
 
     async function initializeSession() {
@@ -4718,8 +5254,16 @@
       const logoWrap = document.getElementById('profile-logo-badge-wrap');
       const logoImg = document.getElementById('user-logo-display');
 
+      const menuAvatar = document.getElementById('menu-user-avatar');
+      const menuName = document.getElementById('menu-user-name');
+      if (menuAvatar) menuAvatar.src = avatarUrl;
+      if (menuName) menuName.textContent = name;
+
       if (profAvatar) profAvatar.src = avatarUrl;
-      if (profName) profName.innerHTML = escapeHtml(name) + ' <i class="fa-solid fa-circle-check verified-icon" style="font-size:1rem;"></i>';
+      if (profName) {
+        profName.innerHTML = escapeHtml(name) + ' <i class="fa-solid fa-circle-check verified-icon" style="font-size:1rem;"></i>';
+        profName.style.display = 'block';
+      }
       if (profBio) {
         if (bio) {
           profBio.textContent = bio;
@@ -4740,12 +5284,27 @@
           profCover.style.background = themeGrad;
         }
       }
-      if (logoWrap && logoImg) {
-        if (profileData.logo_url) {
-          logoImg.src = profileData.logo_url;
-          logoWrap.style.display = 'block';
-        } else {
-          logoWrap.style.display = 'none';
+      const badgeWrap = document.getElementById('user-logo-badge-wrap') || logoWrap;
+      const badgeImg = document.getElementById('user-logo-img-display') || logoImg;
+      const badgeIcon = document.getElementById('user-logo-icon-display');
+      const badgeText = document.getElementById('user-logo-text-display');
+      if (badgeWrap) {
+        badgeWrap.style.display = 'flex';
+        if (badgeImg) {
+          if (profileData.logo_url) {
+            badgeImg.src = profileData.logo_url;
+            badgeImg.style.display = 'block';
+            if (badgeIcon) badgeIcon.style.display = 'none';
+          } else {
+            badgeImg.style.display = 'none';
+            if (badgeIcon) {
+              badgeIcon.style.display = 'inline';
+              badgeIcon.textContent = profileData.logo_icon || '🌱';
+            }
+          }
+        }
+        if (badgeText) {
+          badgeText.textContent = profileData.logo_text || 'MY LOGO';
         }
       }
     }
@@ -4755,6 +5314,16 @@
       const target = document.getElementById(viewId);
       if (target) target.classList.add('active');
       currentView = viewId;
+
+      const headerAuth = document.getElementById('header-auth-actions');
+      const bottomNav = document.getElementById('bottom-nav');
+      if (viewId === 'auth-view') {
+        if (headerAuth) headerAuth.style.display = 'none';
+        if (bottomNav) bottomNav.style.display = 'none';
+      } else if (currentUser) {
+        if (headerAuth) headerAuth.style.display = 'flex';
+        if (bottomNav) bottomNav.style.display = 'flex';
+      }
 
       document.querySelectorAll('.nav-tab').forEach(tab => {
         const onclickAttr = tab.getAttribute('onclick') || '';
@@ -4882,7 +5451,8 @@
 
     function getSavedReaction(postId) {
       try {
-        const raw = localStorage.getItem('novabook_reaction_' + postId);
+        const myId = currentUser ? String(currentUser.uid || currentUser.id || '') : 'guest';
+        const raw = localStorage.getItem('novabook_reaction_' + myId + '_' + postId);
         return raw ? JSON.parse(raw) : null;
       } catch (e) {
         return null;
@@ -4891,10 +5461,11 @@
 
     function setSavedReaction(postId, reactionObj) {
       try {
+        const myId = currentUser ? String(currentUser.uid || currentUser.id || '') : 'guest';
         if (reactionObj) {
-          localStorage.setItem('novabook_reaction_' + postId, JSON.stringify(reactionObj));
+          localStorage.setItem('novabook_reaction_' + myId + '_' + postId, JSON.stringify(reactionObj));
         } else {
-          localStorage.removeItem('novabook_reaction_' + postId);
+          localStorage.removeItem('novabook_reaction_' + myId + '_' + postId);
         }
       } catch (e) {}
     }
@@ -5750,12 +6321,13 @@
       const newPost = {
         id: 'post_shared_' + Date.now(),
         user_id: myId,
+        user_email: currentUser?.email || '',
         content: sharedContent,
         image_url: shareItem.image_url || null,
         video_url: shareItem.video_url || null,
         group_id: null,
-        likes_count: 1,
-        views_count: 1,
+        likes_count: 0,
+        views_count: 0,
         created_at: new Date().toISOString()
       };
 
@@ -6163,11 +6735,14 @@
         const newPost = {
           id: newPostId,
           user_id: myId,
+          user_email: currentUser?.email || '',
           is_local_owner: true,
           content: finalContent || (videoUrl ? 'Uploaded a new video 🎬' : 'Shared a new photo 📸'),
           image_url: imageUrl,
           video_url: videoUrl,
           location: selectedLocation || null,
+          likes_count: 0,
+          views_count: 0,
           created_at: new Date().toISOString()
         };
 
@@ -6367,7 +6942,12 @@
 
     function openMusicPicker(target = 'post') {
       musicPickerTarget = target;
-      selectedPickerSong = (target === 'post' ? composerSelectedSong : storySelectedSong);
+      selectedPickerSong = (
+        target === 'post' ? composerSelectedSong :
+        target === 'story' ? storySelectedSong :
+        target === 'reel' ? reelSelectedSong :
+        target === 'live' ? liveSelectedSong : null
+      );
       currentMusicFilter = 'all';
 
       document.querySelectorAll('.music-cat-pill').forEach((btn, idx) => {
@@ -6536,6 +7116,7 @@
         storySelectedSong = selectedPickerSong;
         updateStoryCreatorMusicUI();
       } else if (musicPickerTarget === 'reel') {
+        reelSelectedSong = selectedPickerSong;
         window._selectedReelSong = selectedPickerSong;
         const reelSelect = document.getElementById('create-reel-audio-select');
         if (reelSelect) {
@@ -6551,6 +7132,7 @@
         }
         showToast('Music added to Reel: ' + selectedPickerSong.title + ' 🎵');
       } else if (musicPickerTarget === 'live') {
+        liveSelectedSong = selectedPickerSong;
         window._selectedLiveSong = selectedPickerSong;
         const pill = document.getElementById('live-selected-music-pill');
         const labelEl = document.getElementById('live-selected-music-label');
@@ -6564,6 +7146,23 @@
       }
 
       closeModal('music-picker-modal');
+    }
+
+    function removeReelSong() {
+      reelSelectedSong = null;
+      window._selectedReelSong = null;
+    }
+
+    function removeLiveSong() {
+      liveSelectedSong = null;
+      window._selectedLiveSong = null;
+      stopPostMusic();
+      const pill = document.getElementById('live-selected-music-pill');
+      if (pill) pill.style.display = 'none';
+    }
+
+    function insertQuickReelStudioEmoji(emoji) {
+      insertReelEmoji(emoji);
     }
 
     function handleCustomAudioSelected(event) {
@@ -7310,46 +7909,81 @@
     }
 
     /* =========================================================================
-       FRIENDS SECTION
+       FRIENDS SECTION (PER-USER REAL FRIENDSHIPS)
        ========================================================================= */
+    function getUserFriendshipsList(uid) {
+      try {
+        const myId = uid || (currentUser && (currentUser.uid || currentUser.id)) || '';
+        if (!myId || myId === 'demo_user_active') return [];
+        const raw = localStorage.getItem('novabook_friendships_' + myId);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch (e) {}
+      return [];
+    }
+
+    function saveUserFriendshipsList(uid, list) {
+      try {
+        const myId = uid || (currentUser && (currentUser.uid || currentUser.id)) || '';
+        if (!myId || myId === 'demo_user_active') return;
+        localStorage.setItem('novabook_friendships_' + myId, JSON.stringify(Array.isArray(list) ? list : []));
+      } catch (e) {}
+    }
+
     async function loadFriendSuggestions() { loadFriendsSections(); }
 
     async function loadFriendsSections() {
       if (!currentUser) return;
       const myId = currentUser.uid || currentUser.id;
       try {
-        let friendships = null;
-        let allProfiles = null;
+        let friendships = getUserFriendshipsList(myId);
+        let allProfiles = [...mockProfiles.filter(p => p.id !== 'demo_user_active')];
+
+        // Also include any followed users in accepted friendships if not already listed
+        const followedSet = getFollowedUsersSet();
+        followedSet.forEach(fid => {
+          if (String(fid) !== String(myId) && !friendships.some(f => (f.user_id === myId && f.friend_id === fid) || (f.friend_id === myId && f.user_id === fid))) {
+            friendships.push({
+              id: 'f_fol_' + fid,
+              user_id: myId,
+              friend_id: fid,
+              status: 'accepted',
+              created_at: new Date().toISOString()
+            });
+          }
+        });
+        saveUserFriendshipsList(myId, friendships);
 
         if (rtdb) {
           try {
-            const fSnap = await safeRtdbQuery(rtdb.ref('friendships').once('value'), 500);
-            if (fSnap.exists()) {
-              const allF = Object.values(fSnap.val());
-              friendships = allF.filter(f => f.user_id === myId || f.friend_id === myId);
-            }
             const pSnap = await safeRtdbQuery(rtdb.ref('profiles').once('value'), 500);
             if (pSnap.exists()) {
-              allProfiles = Object.values(pSnap.val());
-              allProfiles.forEach(p => { cachedUsers[p.id] = p; });
+              const remoteProfiles = Object.values(pSnap.val());
+              remoteProfiles.forEach(p => {
+                if (p && p.id && p.id !== 'demo_user_active') {
+                  cachedUsers[p.id] = p;
+                  if (!allProfiles.some(ap => String(ap.id) === String(p.id))) {
+                    allProfiles.push(p);
+                  }
+                }
+              });
             }
           } catch(e) {}
         }
 
-        if (!friendships) friendships = mockFriendships;
-        if (!allProfiles) allProfiles = mockProfiles;
-
-        const incoming = (friendships || []).filter(f => f.friend_id === myId && f.status === 'pending');
-        const accepted = (friendships || []).filter(f => f.status === 'accepted');
-        const pendingOtherIds = (friendships || []).map(f => f.user_id === myId ? f.friend_id : f.user_id);
+        const incoming = friendships.filter(f => String(f.friend_id) === String(myId) && f.status === 'pending');
+        const accepted = friendships.filter(f => (String(f.user_id) === String(myId) || String(f.friend_id) === String(myId)) && f.status === 'accepted');
+        const connectedIds = friendships.map(f => String(f.user_id) === String(myId) ? String(f.friend_id) : String(f.user_id));
 
         renderFriendRequests(incoming);
         renderCurrentFriends(accepted);
-        renderSuggestedFriends(allProfiles || [], [myId, ...pendingOtherIds]);
+        renderSuggestedFriends(allProfiles, [String(myId), ...connectedIds]);
       } catch (err) {
-        renderFriendRequests(mockFriendships.filter(f => f.friend_id === myId && f.status === 'pending'));
-        renderCurrentFriends(mockFriendships.filter(f => f.status === 'accepted'));
-        renderSuggestedFriends(mockProfiles, [myId]);
+        renderFriendRequests([]);
+        renderCurrentFriends([]);
+        renderSuggestedFriends(mockProfiles.filter(p => p.id !== 'demo_user_active'), [String(myId)]);
       }
     }
 
@@ -7377,12 +8011,12 @@
     function renderCurrentFriends(accepted) {
       const container = document.getElementById('current-friends-list');
       if (!accepted || accepted.length === 0) {
-        container.innerHTML = '<span style="font-size:0.8rem; color:var(--text-muted);">You haven\'t added any friends yet.</span>';
+        container.innerHTML = '<span style="font-size:0.8rem; color:var(--text-muted);">You haven\'t added any friends yet. Add friends below!</span>';
         return;
       }
       const myId = currentUser?.uid || currentUser?.id;
       container.innerHTML = accepted.map(f => {
-        const friendId = f.user_id === myId ? f.friend_id : f.user_id;
+        const friendId = String(f.user_id) === String(myId) ? f.friend_id : f.user_id;
         const friend = cachedUsers[friendId] || { full_name: 'Friend', avatar_url: getDefaultAvatar(friendId) };
         return '<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:6px;">' +
           '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="openDirectChat(\''+friendId+'\', \''+escapeHtml(friend.full_name || 'Friend')+'\')">' +
@@ -7392,118 +8026,94 @@
               '<div style="font-size:0.7rem; color:var(--primary);"><i class="fa-solid fa-message"></i> Message</div>' +
             '</div>' +
           '</div>' +
-          '<button class="btn btn-outline btn-sm" onclick="removeFriend(\''+f.id+'\')" style="color:var(--danger); border-color:#fecaca;">Remove</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="removeFriend(\''+f.id+'\', \''+friendId+'\')" style="color:var(--danger); border-color:#fecaca;">Remove</button>' +
         '</div>';
       }).join('');
     }
 
     function renderSuggestedFriends(allProfiles, excludeIds) {
       const container = document.getElementById('suggested-friends-list');
-      const suggestions = allProfiles.filter(p => !excludeIds.includes(p.id));
+      const suggestions = allProfiles.filter(p => p && p.id && !excludeIds.includes(String(p.id)));
 
       if (suggestions.length === 0) {
-        container.innerHTML = '<span style="font-size:0.8rem; color:var(--text-muted);">No suggestions right now.</span>';
+        container.innerHTML = '<span style="font-size:0.8rem; color:var(--text-muted);">No more suggestions right now.</span>';
         return;
       }
 
       container.innerHTML = suggestions.map(p => 
         '<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:6px;">' +
-          '<div style="display:flex; align-items:center; gap:8px;">' +
+          '<div style="display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="viewUserProfile(\''+p.id+'\')">' +
             '<img src="' + (p.avatar_url || getDefaultAvatar(p.id)) + '" class="avatar-sm" alt="Avatar">' +
             '<span style="font-weight:700; font-size:0.85rem;">' + escapeHtml(p.full_name || 'Nova User') + '</span>' +
           '</div>' +
-          '<button class="btn btn-primary btn-sm" onclick="sendFriendRequest(\''+p.id+'\')"><i class="fa-solid fa-user-plus"></i> Add</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="sendFriendRequest(\''+p.id+'\')"><i class="fa-solid fa-user-plus"></i> Add Friend</button>' +
         '</div>'
       ).join('');
     }
 
     async function sendFriendRequest(targetUserId) {
-      if (!currentUser) return;
+      if (!currentUser || !targetUserId) return;
       const myId = currentUser.uid || currentUser.id;
-      try {
-        if (rtdb) {
-          const reqRef = rtdb.ref('friendships').push();
-          const reqData = {
-            id: reqRef.key,
-            user_id: myId,
-            friend_id: targetUserId,
-            status: 'pending',
-            created_at: new Date().toISOString()
-          };
-          await reqRef.set(reqData);
-          mockFriendships.push(reqData);
-        } else {
-          mockFriendships.push({
-            id: 'f_req_' + Date.now(),
-            user_id: myId,
-            friend_id: targetUserId,
-            status: 'pending',
-            created_at: new Date().toISOString()
-          });
-        }
+      const list = getUserFriendshipsList(myId);
+      const newFriendship = {
+        id: 'f_' + Date.now(),
+        user_id: myId,
+        friend_id: targetUserId,
+        status: 'accepted',
+        created_at: new Date().toISOString()
+      };
+      list.push(newFriendship);
+      saveUserFriendshipsList(myId, list);
 
-        await createNotification({
-          user_id: targetUserId,
-          type: 'friend_request',
-          from_user_id: myId,
-          reference_id: null,
-          content: (currentProfile?.full_name || 'Someone') + ' sent you a friend request.'
-        });
+      const followedSet = getFollowedUsersSet();
+      followedSet.add(String(targetUserId));
+      saveFollowedUsersSet(followedSet);
+      updateFollowUI(targetUserId);
 
-        alert('Friend request sent!');
-        loadFriendsSections();
-      } catch (err) {
-        alert('Friend request sent!');
-        loadFriendsSections();
-      }
+      const friendName = cachedUsers[targetUserId]?.full_name || 'Friend';
+      showToast('Added ' + friendName + ' to your Friends! 🤝');
+      loadFriendsSections();
+      if (currentView === 'profile-view') loadProfilePosts();
     }
 
     async function acceptFriendRequest(friendshipId, senderId) {
       const myId = currentUser?.uid || currentUser?.id;
-      try {
-        if (rtdb) {
-          await rtdb.ref('friendships/' + friendshipId).update({ status: 'accepted' });
-        }
-        const req = mockFriendships.find(f => f.id === friendshipId);
-        if (req) req.status = 'accepted';
-
-        await createNotification({
-          user_id: senderId,
-          type: 'friend_request',
-          from_user_id: myId,
-          reference_id: friendshipId,
-          content: (currentProfile?.full_name || 'A user') + ' accepted your friend request.'
-        });
-
-        loadFriendsSections();
-      } catch (err) {
-        loadFriendsSections();
+      const list = getUserFriendshipsList(myId);
+      const req = list.find(f => f.id === friendshipId);
+      if (req) req.status = 'accepted';
+      saveUserFriendshipsList(myId, list);
+      if (senderId) {
+        const followedSet = getFollowedUsersSet();
+        followedSet.add(String(senderId));
+        saveFollowedUsersSet(followedSet);
       }
+      loadFriendsSections();
+      if (currentView === 'profile-view') loadProfilePosts();
     }
 
     async function declineFriendRequest(friendshipId) {
-      try {
-        if (rtdb) {
-          await rtdb.ref('friendships/' + friendshipId).remove();
-        }
-        mockFriendships = mockFriendships.filter(f => f.id !== friendshipId);
-        loadFriendsSections();
-      } catch (err) {
-        loadFriendsSections();
-      }
+      const myId = currentUser?.uid || currentUser?.id;
+      const list = getUserFriendshipsList(myId).filter(f => f.id !== friendshipId);
+      saveUserFriendshipsList(myId, list);
+      loadFriendsSections();
     }
 
-    async function removeFriend(friendshipId) {
-      if (!confirm('Remove this friend?')) return;
-      try {
-        if (rtdb) {
-          await rtdb.ref('friendships/' + friendshipId).remove();
-        }
-        mockFriendships = mockFriendships.filter(f => f.id !== friendshipId);
-        loadFriendsSections();
-      } catch (err) {
-        loadFriendsSections();
+    async function removeFriend(friendshipId, friendUserId) {
+      const myId = currentUser?.uid || currentUser?.id;
+      const list = getUserFriendshipsList(myId);
+      const target = list.find(f => f.id === friendshipId);
+      const targetFriendId = friendUserId || (target ? (String(target.user_id) === String(myId) ? target.friend_id : target.user_id) : null);
+      const updated = list.filter(f => f.id !== friendshipId && (!targetFriendId || !(f.friend_id === targetFriendId || f.user_id === targetFriendId)));
+      saveUserFriendshipsList(myId, updated);
+      if (targetFriendId) {
+        const followedSet = getFollowedUsersSet();
+        followedSet.delete(String(targetFriendId));
+        saveFollowedUsersSet(followedSet);
+        updateFollowUI(targetFriendId);
       }
+      showToast('Friend removed.');
+      loadFriendsSections();
+      if (currentView === 'profile-view') loadProfilePosts();
     }
 
     function handleFriendsSearch(e) {
@@ -8211,23 +8821,25 @@
 
     async function loadProfileTabContent(userId, tab) {
       const deletedIds = getDeletedItemIds();
-      const myUid = currentUser ? (currentUser.uid || currentUser.id) : 'demo_user_active';
-      const targetUid = userId || myUid;
-      const isMe = (String(targetUid) === String(myUid) || String(targetUid) === 'demo_user_active');
+      const myUid = currentUser ? String(currentUser.uid || currentUser.id || '') : '';
+      const targetUid = String(userId || myUid || '');
+      const isMe = !!(myUid && targetUid === myUid);
 
-      // Ensure all local posts, broadcast replays, and reels are loaded into caches
+      // Load local posts/reels that have explicit owner user_id
       getStoredLocalPosts().forEach(p => {
         if (p && p.id && !deletedIds.has(String(p.id))) {
           allFeedPostsCache[p.id] = p;
         }
       });
       getStoredBroadcastRecords().forEach(r => {
-        if (r && r.id && !deletedIds.has(String(r.id)) && !allFeedPostsCache[r.id]) {
+        const rOwner = String(r?.user_id || r?.host_id || '');
+        if (r && r.id && rOwner && rOwner !== 'demo_user_active' && !deletedIds.has(String(r.id)) && !allFeedPostsCache[r.id]) {
           allFeedPostsCache[r.id] = r;
         }
       });
       getStoredLocalReels().forEach(sr => {
-        if (sr && sr.id && !deletedIds.has(String(sr.id))) {
+        const srOwner = String(sr?.user_id || '');
+        if (sr && sr.id && srOwner && srOwner !== 'demo_user_active' && !deletedIds.has(String(sr.id))) {
           if (!mockReels.some(mr => String(mr.id) === String(sr.id))) {
             mockReels.unshift(sr);
           }
@@ -8235,11 +8847,11 @@
           if (!allFeedPostsCache[postReelId] && !deletedIds.has(postReelId)) {
             allFeedPostsCache[postReelId] = {
               id: postReelId,
-              user_id: sr.user_id || myUid,
+              user_id: srOwner,
               content: (sr.caption || 'Shared Nova Reel') + '\n🎬 Shared as Nova Reel',
               video_url: sr.video_url,
               image_url: null,
-              is_local_owner: true,
+              is_local_owner: (srOwner === myUid),
               created_at: sr.created_at || new Date().toISOString()
             };
           }
@@ -8249,15 +8861,17 @@
       const allPostsList = Object.values(allFeedPostsCache).filter(p => p && p.id && !deletedIds.has(String(p.id)));
       allPostsList.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
+      // Strictly filter posts & reels by exact user_id match (new users have 0 posts & 0 videos!)
       const userPosts = allPostsList.filter(p => {
-        if (isMe) return isOwnedByCurrentUser(p);
-        return String(p.user_id || p.host_id || p.author_id) === String(targetUid);
+        if (!targetUid || targetUid === 'demo_user_active') return false;
+        const ownerId = String(p.user_id || p.host_id || p.author_id || '');
+        return ownerId === targetUid;
       });
 
       const activeReels = mockReels.filter(r => r && r.id && !deletedIds.has(String(r.id)));
       const userReels = activeReels.filter(r => {
-        if (isMe) return isOwnedByCurrentUser(r);
-        return String(r.user_id) === String(targetUid);
+        if (!targetUid || targetUid === 'demo_user_active') return false;
+        return String(r.user_id || '') === targetUid;
       });
 
       // Build combined videos list (video posts + reels)
@@ -8291,13 +8905,13 @@
         }
       });
 
-      // Build Friends list for user
-      const followedIds = Array.from(getFollowedUsersSet());
+      // Build REAL Friends list for user (only users actually followed/added by this user — 0 for a new user!)
+      const followedIds = isMe ? Array.from(getFollowedUsersSet()) : [];
       const friendsList = [];
       const seenFriendIds = new Set();
       followedIds.forEach(fid => {
-        if (String(fid) === String(myUid)) return;
-        const u = cachedUsers[fid] || mockFriends.find(mf => String(mf.id) === String(fid));
+        if (String(fid) === String(targetUid)) return;
+        const u = cachedUsers[fid] || mockFriends.find(mf => String(mf.id) === String(fid)) || { id: fid, full_name: 'Nova User', avatar_url: getDefaultAvatar(fid) };
         if (u && !seenFriendIds.has(String(fid))) {
           seenFriendIds.add(String(fid));
           friendsList.push({
@@ -8309,30 +8923,29 @@
           });
         }
       });
-      mockFriends.forEach(mf => {
-        if (!seenFriendIds.has(String(mf.id)) && String(mf.id) !== String(myUid)) {
-          seenFriendIds.add(String(mf.id));
-          friendsList.push({
-            id: mf.id,
-            full_name: mf.full_name || mf.name || 'Nova Friend',
-            avatar_url: mf.avatar_url || mf.avatar || getDefaultAvatar(mf.id),
-            bio: mf.bio || 'NovaBook Creator',
-            isFollowing: isUserFollowed(mf.id)
-          });
+
+      // Calculate REAL Total Views across this user's own posts and videos (0 for a new user!)
+      let totalUserViews = 0;
+      userPosts.forEach(p => { totalUserViews += getVideoViewCount(p.id); });
+      userReels.forEach(r => {
+        if (!userPosts.some(p => String(p.id) === 'post_' + String(r.id))) {
+          totalUserViews += getVideoViewCount(r.id);
         }
       });
 
-      // Update Dashboard Stat Counters
+      // Update Dashboard Stat Counters (0 for a new user!)
       const statPostsEl = document.getElementById('profile-stat-posts');
       const statVideosEl = document.getElementById('profile-stat-videos');
+      const statViewsEl = document.getElementById('profile-stat-about-views');
       const statFriendsEl = document.getElementById('profile-stat-friends');
       const statFollowersEl = document.getElementById('profile-stat-followers');
 
       if (statPostsEl) statPostsEl.textContent = userPosts.length;
       if (statVideosEl) statVideosEl.textContent = combinedVideos.length;
+      if (statViewsEl) statViewsEl.textContent = totalUserViews.toLocaleString();
       if (statFriendsEl) statFriendsEl.textContent = friendsList.length;
       if (statFollowersEl) {
-        const fCount = isMe ? (184 + followedIds.length) : (authorFollowersCache[targetUid] || 245);
+        const fCount = isMe ? friendsList.length : (authorFollowersCache[targetUid] || 0);
         statFollowersEl.textContent = fCount;
       }
 
@@ -8452,40 +9065,82 @@
         }
       }
 
+      // 3b. Populate Photos Tab (#profile-photos-list)
+      const photosContainer = document.getElementById('profile-photos-list');
+      if (photosContainer) {
+        const photoPosts = userPosts.filter(p => !!p.image_url);
+        if (photoPosts.length === 0) {
+          photosContainer.innerHTML = '<div class="card empty-box" style="grid-column: 1 / -1; padding: 30px; text-align: center; color: var(--text-muted);">No photos uploaded yet.</div>';
+        } else {
+          photosContainer.innerHTML = photoPosts.map(p => `
+            <div style="position:relative; aspect-ratio:1/1; border-radius:10px; overflow:hidden; background:#0f172a; border:1px solid var(--border);">
+              <img src="${escapeHtml(p.image_url)}" style="width:100%; height:100%; object-fit:cover; cursor:pointer;" onclick="openPhotoLightbox('${escapeHtml(p.image_url)}', '${escapeHtml(cleanPostContent(p.content))}')">
+              ${(isMe && isOwnedByCurrentUser(p)) ? `
+                <button onclick="event.stopPropagation(); deletePost('${p.id}')" style="position:absolute; bottom:6px; right:6px; background:rgba(220,38,38,0.9); color:#fff; border:none; border-radius:6px; padding:4px 8px; font-size:0.7rem; font-weight:700; cursor:pointer;">
+                  <i class="fa-solid fa-trash"></i> Delete
+                </button>
+              ` : ''}
+            </div>
+          `).join('');
+        }
+      }
+
       // 4. Populate About Tab (#profile-tab-about)
       const aboutBioEl = document.getElementById('about-bio-text');
-      const aboutJoinedEl = document.getElementById('about-joined-date');
+      const aboutJoinedEl = document.getElementById('about-joined-date') || document.getElementById('profile-about-joined');
       const aboutLocEl = document.getElementById('about-location-text');
       const aboutSummaryEl = document.getElementById('about-posts-summary');
+      const aboutDetailsEl = document.getElementById('profile-about-details');
       const savedProf = getSavedUserProfileData();
       const targetUserObj = isMe ? { ...savedProf, ...(currentProfile || {}) } : (cachedUsers[targetUid] || {});
+      const cleanBio = (targetUserObj.bio || '').trim();
+      const loc = (targetUserObj.location || '').trim();
+      const web = (targetUserObj.website || '').trim();
+      const userEmail = (isMe && currentUser && currentUser.email) ? currentUser.email : (targetUserObj.email || '');
 
       if (aboutBioEl) {
-        const cleanBio = (targetUserObj.bio || '').trim();
         aboutBioEl.textContent = (cleanBio && !cleanBio.includes('Exploring NovaBook with copyright-free music'))
           ? cleanBio
-          : (isMe ? 'Tap "Edit Profile / Theme / Logo" above to add your personal bio, theme, banner, and brand logo.' : 'NovaBook Creator & Community Member.');
+          : (isMe ? 'Tap "Edit Profile" above to add your personal bio, theme, banner, and brand logo.' : 'NovaBook Creator & Community Member.');
       }
       if (aboutJoinedEl) {
-        aboutJoinedEl.textContent = 'Joined NovaBook Community';
+        aboutJoinedEl.textContent = 'Joined NovaBook Community' + (userEmail ? ' • ' + userEmail : '');
       }
       if (aboutLocEl) {
-        const loc = (targetUserObj.location || '').trim();
-        const web = (targetUserObj.website || '').trim();
         aboutLocEl.innerHTML = escapeHtml(loc || 'Global Creator') + (web ? ' &bull; <a href="' + escapeHtml(web) + '" target="_blank" rel="noopener" style="color:var(--primary); font-weight:700;">' + escapeHtml(web) + '</a>' : '');
       }
       if (aboutSummaryEl) {
         aboutSummaryEl.textContent = userPosts.length + ' Posts • ' + combinedVideos.length + ' Videos & Reels • ' + friendsList.length + ' Friends';
+      }
+      if (aboutDetailsEl) {
+        aboutDetailsEl.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:8px; background:var(--bg); padding:12px; border-radius:10px; border:1px solid var(--border);">
+            <div><strong><i class="fa-solid fa-user" style="color:var(--primary); width:20px;"></i> Name:</strong> ${escapeHtml(targetUserObj.full_name || 'My Profile')}</div>
+            ${userEmail ? `<div><strong><i class="fa-solid fa-envelope" style="color:var(--primary); width:20px;"></i> Email:</strong> ${escapeHtml(userEmail)}</div>` : ''}
+            ${cleanBio ? `<div><strong><i class="fa-solid fa-quote-left" style="color:var(--primary); width:20px;"></i> Bio:</strong> ${escapeHtml(cleanBio)}</div>` : ''}
+            <div><strong><i class="fa-solid fa-location-dot" style="color:var(--primary); width:20px;"></i> Location:</strong> ${escapeHtml(loc || 'Not specified')}</div>
+            ${web ? `<div><strong><i class="fa-solid fa-globe" style="color:var(--primary); width:20px;"></i> Website:</strong> <a href="${escapeHtml(web)}" target="_blank" rel="noopener" style="color:var(--primary); font-weight:700;">${escapeHtml(web)}</a></div>` : ''}
+            <div><strong><i class="fa-solid fa-chart-simple" style="color:var(--primary); width:20px;"></i> Activity:</strong> ${userPosts.length} Posts &bull; ${combinedVideos.length} Videos & Reels &bull; ${friendsList.length} Friends</div>
+          </div>
+          ${isMe ? `
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
+              <button type="button" class="btn btn-outline btn-sm" onclick="openEditProfileModal()"><i class="fa-solid fa-pen"></i> Edit Profile</button>
+              <button type="button" class="btn btn-outline btn-sm" onclick="handleSignOut()" style="color:#dc2626; border-color:#fca5a5;"><i class="fa-solid fa-right-from-bracket"></i> Log Out</button>
+              <button type="button" class="btn btn-outline btn-sm" onclick="openDeleteAccountModal()" style="background:#dc2626; color:#fff; border-color:#dc2626;"><i class="fa-solid fa-user-xmark"></i> Delete Account</button>
+            </div>
+          ` : ''}
+        `;
       }
     }
 
     let pendingEditAvatarDataUrl = null;
     let pendingEditCoverDataUrl = null;
     let pendingEditLogoDataUrl = null;
+    let pendingEditLogoIcon = '🌱';
     let pendingEditThemeGradient = null;
 
     function openEditProfileModal() {
-      const modal = document.getElementById('profile-edit-modal') || document.getElementById('edit-profile-modal');
+      const modal = document.getElementById('profile-modal') || document.getElementById('profile-edit-modal') || document.getElementById('edit-profile-modal');
       if (!modal) return;
       const savedProf = getSavedUserProfileData();
       const prof = { ...savedProf, ...(currentProfile || {}) };
@@ -8493,15 +9148,19 @@
       pendingEditAvatarDataUrl = prof.avatar_url || null;
       pendingEditCoverDataUrl = prof.cover_url || null;
       pendingEditLogoDataUrl = prof.logo_url || null;
+      pendingEditLogoIcon = prof.logo_icon || '🌱';
       pendingEditThemeGradient = prof.theme_gradient || 'linear-gradient(135deg, #15803d, #eab308)';
 
       const nameInput = document.getElementById('edit-profile-name');
       const bioInput = document.getElementById('edit-profile-bio');
       const locInput = document.getElementById('edit-profile-location');
       const webInput = document.getElementById('edit-profile-website');
-      const avatarPrev = document.getElementById('edit-avatar-preview-img');
-      const coverPrev = document.getElementById('edit-cover-preview-box');
-      const logoPrev = document.getElementById('edit-logo-preview-img');
+      const logoTextInput = document.getElementById('edit-logo-text');
+      const avatarPrev = document.getElementById('edit-avatar-preview') || document.getElementById('edit-avatar-preview-img');
+      const coverPrev = document.getElementById('edit-banner-preview') || document.getElementById('edit-cover-preview-box');
+      const logoPrev = document.getElementById('edit-logo-img-preview') || document.getElementById('edit-logo-preview-img');
+      const logoIconPrev = document.getElementById('edit-logo-icon-preview');
+      const logoLabelPrev = document.getElementById('edit-logo-label-preview');
 
       if (nameInput) nameInput.value = (prof.full_name && prof.full_name !== 'Nova Explorer') ? prof.full_name : '';
       if (bioInput) {
@@ -8510,6 +9169,8 @@
       }
       if (locInput) locInput.value = prof.location || '';
       if (webInput) webInput.value = prof.website || '';
+      if (logoTextInput) logoTextInput.value = prof.logo_text || 'MY LOGO';
+      if (logoLabelPrev) logoLabelPrev.textContent = prof.logo_text || 'MY LOGO';
       if (avatarPrev) avatarPrev.src = prof.avatar_url || getDefaultAvatar('demo_user_active');
       if (coverPrev) {
         if (prof.cover_url) {
@@ -8523,19 +9184,29 @@
         }
       }
       if (logoPrev) {
-        logoPrev.src = prof.logo_url || 'https://api.dicebear.com/7.x/shapes/svg?seed=novalogo';
+        if (prof.logo_url) {
+          logoPrev.src = prof.logo_url;
+          logoPrev.style.display = 'block';
+          if (logoIconPrev) logoIconPrev.style.display = 'none';
+        } else {
+          logoPrev.style.display = 'none';
+          if (logoIconPrev) {
+            logoIconPrev.style.display = 'inline';
+            logoIconPrev.textContent = pendingEditLogoIcon;
+          }
+        }
       }
 
-      modal.classList.add('active');
+      openModal(modal.id);
+    }
+
+    function selectProfileTheme(primaryHex, gradientCss) {
+      selectProfileThemePreset(gradientCss);
     }
 
     function selectProfileThemePreset(gradientCss, btnEl) {
       pendingEditThemeGradient = gradientCss;
-      document.querySelectorAll('#profile-theme-presets .theme-swatch-btn').forEach(b => {
-        b.style.borderColor = (b === btnEl) ? '#ffffff' : 'transparent';
-        b.style.boxShadow = (b === btnEl) ? '0 0 0 2px var(--primary)' : 'none';
-      });
-      const coverPrev = document.getElementById('edit-cover-preview-box');
+      const coverPrev = document.getElementById('edit-banner-preview') || document.getElementById('edit-cover-preview-box');
       if (coverPrev && !pendingEditCoverDataUrl) {
         coverPrev.style.backgroundImage = 'none';
         coverPrev.style.background = gradientCss;
@@ -8555,9 +9226,8 @@
       reader.onload = (e) => {
         const dataUrl = e.target.result;
         pendingEditAvatarDataUrl = dataUrl;
-        const prev = document.getElementById('edit-avatar-preview-img');
+        const prev = document.getElementById('edit-avatar-preview') || document.getElementById('edit-avatar-preview-img');
         if (prev) prev.src = dataUrl;
-        // Also immediately apply to profile so direct dashboard camera click saves right away
         const savedProf = getSavedUserProfileData();
         savedProf.avatar_url = dataUrl;
         saveUserProfileData(savedProf);
@@ -8572,6 +9242,10 @@
       handleAvatarUpload(event);
     }
 
+    function handleQuickAvatarSelected(event) {
+      handleAvatarUpload(event);
+    }
+
     function handleCoverUpload(event) {
       const file = event.target.files && event.target.files[0];
       if (!file) return;
@@ -8579,7 +9253,7 @@
       reader.onload = (e) => {
         const dataUrl = e.target.result;
         pendingEditCoverDataUrl = dataUrl;
-        const coverPrev = document.getElementById('edit-cover-preview-box');
+        const coverPrev = document.getElementById('edit-banner-preview') || document.getElementById('edit-cover-preview-box');
         if (coverPrev) {
           coverPrev.style.backgroundImage = 'url(' + dataUrl + ')';
           coverPrev.style.backgroundSize = 'cover';
@@ -8595,9 +9269,32 @@
       reader.readAsDataURL(file);
     }
 
+    function handleBannerPreview(event) {
+      handleCoverUpload(event);
+    }
+
+    function handleQuickBannerSelected(event) {
+      handleCoverUpload(event);
+    }
+
+    function selectPresetBanner(url) {
+      pendingEditCoverDataUrl = url;
+      const coverPrev = document.getElementById('edit-banner-preview') || document.getElementById('edit-cover-preview-box');
+      if (coverPrev) {
+        coverPrev.style.backgroundImage = 'url(' + url + ')';
+        coverPrev.style.backgroundSize = 'cover';
+        coverPrev.style.backgroundPosition = 'center';
+      }
+      showToast('Banner preset selected! 🖼️');
+    }
+
+    function clearCustomBanner() {
+      removeProfileCover();
+    }
+
     function removeProfileCover() {
       pendingEditCoverDataUrl = null;
-      const coverPrev = document.getElementById('edit-cover-preview-box');
+      const coverPrev = document.getElementById('edit-banner-preview') || document.getElementById('edit-cover-preview-box');
       const grad = pendingEditThemeGradient || 'linear-gradient(135deg, #15803d, #eab308)';
       if (coverPrev) {
         coverPrev.style.backgroundImage = 'none';
@@ -8618,8 +9315,13 @@
       reader.onload = (e) => {
         const dataUrl = e.target.result;
         pendingEditLogoDataUrl = dataUrl;
-        const logoPrev = document.getElementById('edit-logo-preview-img');
-        if (logoPrev) logoPrev.src = dataUrl;
+        const logoPrev = document.getElementById('edit-logo-img-preview') || document.getElementById('edit-logo-preview-img');
+        const logoIconPrev = document.getElementById('edit-logo-icon-preview');
+        if (logoPrev) {
+          logoPrev.src = dataUrl;
+          logoPrev.style.display = 'block';
+        }
+        if (logoIconPrev) logoIconPrev.style.display = 'none';
         const savedProf = getSavedUserProfileData();
         savedProf.logo_url = dataUrl;
         saveUserProfileData(savedProf);
@@ -8630,10 +9332,30 @@
       reader.readAsDataURL(file);
     }
 
+    function handleLogoPreview(event) {
+      handleLogoUpload(event);
+    }
+
+    function selectPresetLogoIcon(emojiIcon) {
+      pendingEditLogoIcon = emojiIcon;
+      pendingEditLogoDataUrl = null;
+      const logoPrev = document.getElementById('edit-logo-img-preview');
+      const logoIconPrev = document.getElementById('edit-logo-icon-preview');
+      if (logoPrev) logoPrev.style.display = 'none';
+      if (logoIconPrev) {
+        logoIconPrev.style.display = 'inline';
+        logoIconPrev.textContent = emojiIcon;
+      }
+      showToast('Logo badge icon selected: ' + emojiIcon);
+    }
+
     function selectPresetLogoAvatar(url) {
       pendingEditLogoDataUrl = url;
-      const logoPrev = document.getElementById('edit-logo-preview-img');
-      if (logoPrev) logoPrev.src = url;
+      const logoPrev = document.getElementById('edit-logo-img-preview') || document.getElementById('edit-logo-preview-img');
+      if (logoPrev) {
+        logoPrev.src = url;
+        logoPrev.style.display = 'block';
+      }
       const savedProf = getSavedUserProfileData();
       savedProf.logo_url = url;
       saveUserProfileData(savedProf);
@@ -8652,6 +9374,10 @@
       showToast('Creator logo removed.');
     }
 
+    async function handleSaveProfile(event) {
+      return saveProfileChanges(event);
+    }
+
     async function saveProfileChanges(event) {
       if (event) event.preventDefault();
       const myId = currentUser ? (currentUser.uid || currentUser.id) : 'demo_user_active';
@@ -8661,6 +9387,7 @@
       const bioVal = (document.getElementById('edit-profile-bio')?.value || '').trim();
       const locVal = (document.getElementById('edit-profile-location')?.value || '').trim();
       const webVal = (document.getElementById('edit-profile-website')?.value || '').trim();
+      const logoTextVal = (document.getElementById('edit-logo-text')?.value || '').trim();
 
       const updatedProfile = {
         id: myId,
@@ -8668,6 +9395,8 @@
         bio: bioVal,
         location: locVal,
         website: webVal,
+        logo_icon: pendingEditLogoIcon || savedProf.logo_icon || '🌱',
+        logo_text: logoTextVal || savedProf.logo_text || 'MY LOGO',
         avatar_url: pendingEditAvatarDataUrl || savedProf.avatar_url || getDefaultAvatar(myId),
         cover_url: pendingEditCoverDataUrl !== undefined ? pendingEditCoverDataUrl : savedProf.cover_url,
         logo_url: pendingEditLogoDataUrl !== undefined ? pendingEditLogoDataUrl : savedProf.logo_url,
@@ -8686,12 +9415,22 @@
 
       saveUserProfileData(updatedProfile);
 
+      const activeEmail = (localStorage.getItem('novabook_active_account') || (currentUser && currentUser.email) || '').toLowerCase();
+      if (activeEmail) {
+        const accounts = getStoredAccountsMap();
+        if (accounts[activeEmail]) {
+          accounts[activeEmail] = { ...accounts[activeEmail], ...updatedProfile };
+          saveStoredAccountsMap(accounts);
+        }
+      }
+
       if (rtdb && myId) {
         try {
-          await rtdb.ref('profiles/' + myId).set(updatedProfile);
+          await safeRtdbWrite(rtdb.ref('profiles/' + myId).set(updatedProfile), 500);
         } catch (err) {}
       }
 
+      closeModal('profile-modal');
       closeModal('profile-edit-modal');
       closeModal('edit-profile-modal');
       updateUserUI();
@@ -9021,16 +9760,17 @@
       const newReel = {
         id: newReelId,
         user_id: myId,
+        user_email: currentUser?.email || '',
         user_name: myName,
         user_avatar: myAvatar,
         video_url: videoSrc,
         caption: caption || 'Check out my new Reel! 🎬 #NovaBook #Reels',
         music: musicLabel,
         song_obj: reelSelectedSong || null,
-        likes_count: 1,
+        likes_count: 0,
         comments_count: 0,
-        views: '1',
-        isLiked: true,
+        views: '0',
+        isLiked: false,
         is_local_owner: true,
         created_at: new Date().toISOString()
       };
@@ -9052,10 +9792,13 @@
       const reelFeedPost = {
         id: postReelId,
         user_id: myId,
+        user_email: currentUser?.email || '',
         content: postContent,
         video_url: newReel.video_url,
         image_url: null,
         location: 'Nova Studios',
+        likes_count: 0,
+        views_count: 0,
         is_local_owner: true,
         created_at: newReel.created_at
       };
@@ -9711,15 +10454,19 @@
 
         const finalVideoUrl = liveRecordedDataUrl || liveRecordedObjectUrl || null;
         let replayContent = '🔴 Replay: ' + (title || 'Live Broadcast Replay') + ' #LiveStream #Replay #NovaBook';
-        if (liveSelectedSong) {
-          replayContent += ' [music:' + JSON.stringify(liveSelectedSong) + ']';
+        const activeLiveSong = liveSelectedSong || window._selectedLiveSong || null;
+        if (activeLiveSong) {
+          replayContent += ' [music:' + JSON.stringify(activeLiveSong) + ']';
         }
         const replayPost = {
           id: postId,
           user_id: myId,
+          user_email: currentUser?.email || '',
           content: replayContent,
           video_url: finalVideoUrl,
           image_url: null,
+          likes_count: 0,
+          views_count: 0,
           is_local_owner: true,
           created_at: new Date().toISOString()
         };
@@ -10183,8 +10930,7 @@
        SETTINGS, NAV MENU & PREFERENCES
        ========================================================================= */
     function openSettingsModal() {
-      const modal = document.getElementById('settings-modal');
-      if (modal) modal.classList.add('active');
+      openModal('settings-modal');
     }
 
     function closeSettingsModal() {
@@ -10192,8 +10938,8 @@
     }
 
     function openNavMenuModal() {
-      const modal = document.getElementById('nav-menu-modal');
-      if (modal) modal.classList.add('active');
+      if (typeof updateUserUI === 'function') updateUserUI();
+      openModal('nav-menu-modal');
     }
 
     function closeNavMenuModal() {
@@ -10294,21 +11040,36 @@
         document.body.classList.add('dark-theme');
       }
 
-      // Immediately display navigation and auth actions
+      const authState = localStorage.getItem('novabook_auth_state');
+      const activeEmail = (localStorage.getItem('novabook_active_account') || '').toLowerCase();
+      const accounts = getStoredAccountsMap();
+      const activeAcc = activeEmail && accounts[activeEmail] ? accounts[activeEmail] : null;
+
       const headerAuth = document.getElementById('header-auth-actions');
-      if (headerAuth) headerAuth.style.display = 'flex';
       const bottomNav = document.getElementById('bottom-nav');
+
+      if (authState === 'logged_out' || !activeAcc) {
+        currentUser = null;
+        currentProfile = null;
+        if (headerAuth) headerAuth.style.display = 'none';
+        if (bottomNav) bottomNav.style.display = 'none';
+        setAuthMode(Object.keys(accounts).length > 0 ? 'login' : 'signup', true);
+        navigateTo('auth-view');
+        return;
+      }
+
+      initSessionAndAuth();
+      if (headerAuth) headerAuth.style.display = 'flex';
       if (bottomNav) bottomNav.style.display = 'flex';
       if (typeof updateUserUI === 'function') updateUserUI();
 
-      initSessionAndAuth();
       loadStories();
       loadFeed();
       loadFriendsSections();
       loadNotifications();
 
       const hash = window.location.hash.replace('#', '');
-      if (hash && ['feed-view', 'reels-view', 'messages-view', 'friends-view', 'notifications-view', 'profile-view'].includes(hash)) {
+      if (hash && ['feed-view', 'reels-view', 'messages-view', 'friends-view', 'notifications-view', 'profile-view', 'auth-view'].includes(hash)) {
         navigateTo(hash);
       } else {
         navigateTo('feed-view');

@@ -3565,34 +3565,6 @@
             const recaptchaEnterpriseProvider = new firebase.appCheck.ReCaptchaEnterpriseProvider(
               '6LeMnN0tAAAAAA-xbBmn7Cf42UC2TEG_1QyffbFJ'
             );
-            const wrapProviderGetToken = (target) => {
-              if (target && typeof target.getToken === 'function' && !target._wrappedGetToken) {
-                const origGetToken = target.getToken.bind(target);
-                target._wrappedGetToken = true;
-                target.getToken = function(...args) {
-                  try {
-                    const res = origGetToken(...args);
-                    if (res && typeof res.catch === 'function') {
-                      return res.catch(() => ({
-                        token: 'novabook-appcheck-monitoring-token',
-                        expireTimeMillis: Date.now() + 60 * 60 * 1000
-                      }));
-                    }
-                    return res;
-                  } catch (err) {
-                    return Promise.resolve({
-                      token: 'novabook-appcheck-monitoring-token',
-                      expireTimeMillis: Date.now() + 60 * 60 * 1000
-                    });
-                  }
-                };
-              }
-            };
-            wrapProviderGetToken(recaptchaEnterpriseProvider);
-            if (recaptchaEnterpriseProvider && recaptchaEnterpriseProvider._delegate) {
-              wrapProviderGetToken(recaptchaEnterpriseProvider._delegate);
-            }
-
             const appCheck = firebase.appCheck(firebase.app(), {
               provider: recaptchaEnterpriseProvider,
               isTokenAutoRefreshEnabled: true
@@ -3602,7 +3574,7 @@
             }
             firebaseAppCheck = appCheck;
             window._novaBookAppCheckInitialized = true;
-            console.log('NovaBook Firebase App Check initialized');
+            console.log('NovaBook Firebase App Check initialized successfully');
           } catch (error) {
             console.error('NovaBook Firebase App Check initialization failed:', error);
           }
